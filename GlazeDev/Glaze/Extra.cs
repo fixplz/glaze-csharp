@@ -73,8 +73,9 @@ namespace Glaze
 			
 			foreach (Arbiter arb in sp.arbiters)
 				foreach (Contact c in arb.contacts)
-					g.FillEllipse (Brushes.Green, (float)c.p.x-2, (float)c.p.y-2, 6,6);
+					g.FillEllipse (Brushes.Green, (float)c.p.x-2, (float)c.p.y-2, 4,4);
 			
+			/*
 			foreach (Vec2 s in spots)
 			{
 				Pen p = new Pen (Color.Red, 3); float size = 6;
@@ -82,6 +83,7 @@ namespace Glaze
 				g.DrawLine (p, (float)s.x - size, (float)s.y + size, (float)s.x + size, (float)s.y - size);
 			}
 			spots.Clear ();
+			*/
 		}
 		
 		public static PointF AsPoint (Vec2 v)
