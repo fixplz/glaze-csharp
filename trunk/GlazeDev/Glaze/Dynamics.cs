@@ -60,6 +60,7 @@ namespace Glaze
 		
 		internal void UpdatePosition (double dt)
 		{
+			// TODO sleep
 			pos += dt * (vel + velBias); angle += dt * (w + wBias); rot = Vec2.Polar (angle);
 			//motion = Config.motionBias * motion + (1 - Config.motionBias) * (vel.LengthSq + w*w);
 			velBias.Clear (); wBias = 0;
@@ -255,8 +256,8 @@ namespace Glaze
 			
 			double d = a.n*circle.pos;
 			
-			//if (d <  a.n.Cross (u)) return Circle2Circle (circle.pos, u, circle.radius, 0, arb);
 			//if (d >= a.n.Cross (v)) return Circle2Circle (circle.pos, v, circle.radius, 0, arb);
+			//if (d <  a.n.Cross (u)) return Circle2Circle (circle.pos, u, circle.radius, 0, arb);
 			
 			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, -a.n, max, 0);
 			return true;
@@ -289,18 +290,26 @@ namespace Glaze
 		
 		internal static void FindVerts  (Polygon sa, Polygon sb, Axis a, Arbiter arb)
 		{
-			uint id = sa.id > sb.id ? 0u : 65000u;
+			uint id = sa.id << 8;
 			foreach (Vec2 v in sa.vertP)
-				{ if (ContainsVert (sb,v,-a.n)) arb.UpdateContact (v, a.n, a.d, id); id++; }
+			{
+				if (ContainsVert (sb,v,-a.n))
+					arb.UpdateContact (v, a.n, a.d, id);
+				id++;
+			}
 			
-			id = sa.id > sb.id ? 65000u : 0u;
+			id = sb.id << 8;
 			foreach (Vec2 v in sb.vertP)
-				{ if (ContainsVert (sa,v,a.n))  arb.UpdateContact (v, a.n, a.d, id); id++; }
+			{
+				if (ContainsVert (sa,v,a.n))
+					arb.UpdateContact (v, a.n, a.d, id);
+				id++;
+			}
 		}
 		
 		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n)
 		{
-			foreach (Axis a in sa.axisP) if (/*a.n*n > 0 &&*/ a.n*v > a.d) return false;
+			foreach (Axis a in sa.axisP) if (/*a.n*n >= 0 &&*/ a.n*v > a.d) return false;
 			return true;
 		}
 		#endregion

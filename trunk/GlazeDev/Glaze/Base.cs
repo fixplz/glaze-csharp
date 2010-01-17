@@ -21,7 +21,7 @@ namespace Glaze
 			shapes   = new LinkedList<Shape>    ();
 		}
 		
-		#region controls
+		#region CONTROLS
 		public void AddBody (Body body)
 		{
 			foreach (Shape s in body.shapes) s.Attach (shapes);
@@ -34,7 +34,12 @@ namespace Glaze
 			body.Remove ();
 		}
 		
-		public abstract IEnumerable<Shape> Query (AABB area);
+		public virtual IEnumerable<Shape> Query (AABB area)
+		{
+			foreach (Shape s in shapes)
+				if (s.aabb.Intersect (area))
+					yield return s;
+		}
 		
 		public void RunPhysics (double dt)
 		{
@@ -60,7 +65,7 @@ namespace Glaze
 		}
 		#endregion
 		
-		#region collision detection
+		#region COLLISION DETECTION
 		protected abstract void BroadPhase ();
 		
 		protected void NarrowPhase (Shape sa, Shape sb)
@@ -78,6 +83,7 @@ namespace Glaze
 			
 			if (sa.shapeType > sb.shapeType) { var t=sa; sa=sb; sb=t; }
 			
+			// TODO this is shit
 			bool make = arb == null;
 			
 			if (make) arb = new Arbiter (sa,sb);
@@ -109,7 +115,7 @@ namespace Glaze
 			resolveBias    = 0.2;
 		
 		public static Material defaultMaterial =
-			new Material {restitution=0.1, friction=0.9};
+			new Material {restitution=0.2, friction=0.8};
 	}
 	
 	

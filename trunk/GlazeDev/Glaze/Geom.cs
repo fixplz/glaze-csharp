@@ -149,6 +149,7 @@ namespace Glaze
 		public void SetRange (Vec2 v, Vec2 u)              { t=v.y; b=u.y; l=v.x; r=u.x; }
 		
 		public bool IntersectH (AABB x)                    { return x.l < r && l < x.r; }
+		public bool Intersect  (AABB x)                    { return IntersectH (x) && x.t < b && t < x.b; }
 	}
 	
 	
