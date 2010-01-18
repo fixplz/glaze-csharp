@@ -17,14 +17,10 @@ namespace Glaze
 		public Vec2 gravity;
 		
 		// local transform
-		public Vec2 rot;
+		internal Vec2 rot;
 		
 		// mass and inertia
 		public double massInv, inertiaInv;
-		
-		// sleep components
-		internal double  motion   = 0.0002;
-		internal bool    sleeping = false;
 		
 		// bookkeeping
 		public LinkedList<Shape>    shapes;
@@ -50,6 +46,16 @@ namespace Glaze
 			massInv = 1.0/mass; inertiaInv = 1.0/inertia;
 		}
 		
+		public IEnumerable<Body> Contacts ()
+		{
+			Stack<Body> s = new Stack<Body> ();
+			foreach (Arbiter arb in arbiters)
+			{
+				Body other = arb.GetOther (this);
+				if (!s.Contains (other)) { s.Push (other); yield return other; }
+			}
+		}
+		
 		#region INTERNAL CONTROLS
 		internal void UpdateVelocity (double dt)
 		{
@@ -60,29 +66,13 @@ namespace Glaze
 		
 		internal void UpdatePosition (double dt)
 		{
-			// TODO sleep
 			pos += dt * (vel + velBias); angle += dt * (w + wBias); rot = Vec2.Polar (angle);
-			//motion = Config.motionBias * motion + (1 - Config.motionBias) * (vel.LengthSq + w*w);
 			velBias.Clear (); wBias = 0;
 		}
 		
-		internal void ApplyImpulse (Vec2 j, Vec2 r)
-		{
-			vel += massInv * j;
-			w   += inertiaInv * (r * j.Right);
-		}
-		
-		internal void ApplyBiasImpulse (Vec2 j, Vec2 r)
-		{
-			velBias += massInv * j;
-			wBias   += inertiaInv * (r * j.Right);
-		}
-		
-		internal void ApplyForce (Vec2 f, Vec2 r)
-		{
-			forces += f;
-			torque += (r * f.Right);
-		}
+		internal void ApplyImpulse     (Vec2 j, Vec2 r) { vel     += massInv * j; w     += inertiaInv * (r * j.Right); }
+		internal void ApplyBiasImpulse (Vec2 j, Vec2 r) { velBias += massInv * j; wBias += inertiaInv * (r * j.Right); }
+		internal void ApplyForce       (Vec2 f, Vec2 r) { forces  += f; torque += (r * f.Right); }
 		#endregion
 	}
 	
@@ -93,7 +83,7 @@ namespace Glaze
 		public Shape sa,sb;
 		public double u = 0, e = 0;
 		
-		public uint stamp;
+		internal uint stamp;
 		public LinkedList<Contact> contacts;
 		
 		internal Arbiter (Shape sa, Shape sb)
@@ -103,6 +93,8 @@ namespace Glaze
 			e = sa.material.restitution * sb.material.restitution;
 			u = sa.material.friction    * sb.material.friction;
 		}
+		
+		public Body GetOther (Body b) { return sa.body == b ? sb.body : sa.body; }
 		
 		internal void UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
 		{
@@ -309,7 +301,7 @@ namespace Glaze
 		
 		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n)
 		{
-			foreach (Axis a in sa.axisP) if (/*a.n*n >= 0 &&*/ a.n*v > a.d) return false;
+			foreach (Axis a in sa.axisP) if (a.n*n >= 0 && a.n*v > a.d) return false;
 			return true;
 		}
 		#endregion

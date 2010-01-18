@@ -1,0 +1,83 @@
+﻿
+INSTRUCTIONS
+
+var space  = new SortedSpace ();
+
+var circle = new Circle { radius = 15, offset = new Vec2 (0,0) };
+var body   = new Body
+	{ pos = new Vec (200,200), gravity = new Vec2 (0,50) };
+
+circle.CalcMass (); body.AddShape (circle); body.CalcProperties ();
+space.AddBody (body);
+
+void Update () { space.RunPhysics (1.0/60); DrawMyBody (body.pos); }
+
+
+- Each body has a separate 'gravity' property, so you can have
+  custom gravity directions.
+- Setting invMass and/or invInertia to zero will make a body's
+  velocity and rotation (repectively) fixed.
+- You can safely modify 'vel' and 'angle', as well as 'vel'
+  and 'w', their derivatives.
+
+
+Space
+	AddBody     (b)     : void
+	RemoveBody  (b)     : void
+	RunPhysics  (dt)    : void
+	Query       (area)  : IEnumerable<Shape>
+
+Body
+	pos, vel   : Vec2
+	angle, w   : double
+	gravity    : Vec2
+	massInv    : double
+	inertiaInv : double
+	group      : uint
+	AddShape       (s)  : void
+	RemoveShape    (s)  : void
+	CalcProperties ()   : void
+
+Shape
+	body     : Body
+	aabb     : AABB
+	material : Material
+	Area     : double
+	Inertia  : double
+
+Polygon : Shape
+	vertL, vertP : Vec2[] // local and absolute vertice coords
+	Polygon (Vec2[] vertices)
+
+Circle : Shape
+	radius      : double
+	offset, pos : Vec2
+
+AABB l,r,t,b : double
+Vec2 x,y     : double
+
+
+
+TODO
+
+- Shape etalons that hold static data like the local vertices
+  of a polygon - enables quicker creation of new instances.
+- Something similar for bodies, to remove the CalcMass and
+  CalcProperties thing.
+
+- Maybe move syncing out of RunPhysics
+
+- Object pooling
+- Joints, springs
+- Use callbacks to get shape group and combined friction/restitution
+
+
+
+GOTCHAS
+
+- Shapes are updated at the start of RunPhysics, so their data (like
+  the absolute position) is one step behind the real body position.
+- AddBody will probably invalidate the broad phase, so Query
+  won't work before RunPhysics.
+- You must take care that two fixed bodies don't collide in an
+  unresolvable way, or they'll explode.

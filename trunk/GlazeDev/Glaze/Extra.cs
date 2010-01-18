@@ -6,7 +6,7 @@ using System.Drawing;
 
 namespace Glaze
 {
-	public static class G
+	public static class Tools
 	{
 		public static Body CircleBody (double x, double y, double r)
 		{
