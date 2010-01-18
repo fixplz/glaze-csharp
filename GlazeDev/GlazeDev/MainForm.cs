@@ -12,7 +12,7 @@ namespace GlazeDev
 	{
 		public Space space;
 		public Shape selected;
-		public Vec2  mouse;
+		public Vec2  mouse, gravity;
 		
 		public MainForm()
 		{
@@ -21,19 +21,25 @@ namespace GlazeDev
 			DoubleBuffered = true;
 			
 			space = new SortedSpace ();
+			gravity = new Vec2 (0,100);
 			
-			var ground = G.BoxBody (300,500, 0, 1000,100);
+			var ground = Tools.BoxBody (300,500, 0, 1000,100);
 			ground.massInv = 0; ground.inertiaInv = 0;
 			space.AddBody (ground);
 			
-			TestZ ();
+			Test2 ();
 			
 			var t       = new Timer ();
 			t.Interval  = 1000/40;
 			t.Tick      += delegate
 			{
-				if (selected != null) selected.body.vel += (mouse - selected.body.pos).Normalize (20);
-				space.RunPhysics (1.0/20); Invalidate ();
+				int ticks = 3;
+				for (int i=0; i<ticks; i++)
+				{
+					if (selected != null) selected.body.vel += mouse - selected.body.pos;
+					space.RunPhysics (1.0/(ticks*20));
+				}
+				Invalidate ();
 			};
 			t.Start ();
 		}
@@ -48,27 +54,17 @@ namespace GlazeDev
 		{
 			e.Graphics.Clear (Color.White);
 			e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-			G.DrawWorld (space, e.Graphics);
-		}
-		
-		public void TestZ ()
-		{
-			for (int i=0; i<2; i++)
-			{
-				var b = G.BoxBody (200+rand.NextDouble ()*200, rand.NextDouble ()*400, 0, 100,100);
-				b.gravity = new Vec2 (0,30);
-				space.AddBody (b);
-			}
+			Tools.DrawWorld (space, e.Graphics);
 		}
 		
 		public void Test1 ()
 		{
-			for (int i=0; i<150; i++)
+			for (int i=0; i<60; i++)
 			{
-				var b1 = G.BoxBody    (rand.NextDouble ()*600, rand.NextDouble ()*400, rand.NextDouble ()*6.28, 40,30);
-				var b2 = G.CircleBody (rand.NextDouble ()*600, rand.NextDouble ()*400, 20);
-				b1.gravity = new Vec2 (0,30);
-				b2.gravity = new Vec2 (0,30);
+				var b1 = Tools.BoxBody    (rand.NextDouble ()*600, rand.NextDouble ()*400, rand.NextDouble ()*6.28, 40,30);
+				var b2 = Tools.CircleBody (rand.NextDouble ()*600, rand.NextDouble ()*400, 20);
+				b1.gravity = gravity;
+				b2.gravity = gravity;
 				space.AddBody (b1);
 				space.AddBody (b2);
 			}
@@ -76,9 +72,9 @@ namespace GlazeDev
 		
 		public void Test2 ()
 		{
-			for (int i=0; i<150; i++)
+			for (int i=0; i<80; i++)
 			{
-				var n = rand.Next (5) + 6;
+				var n = rand.Next (5) + 3;
 				var verts = new Vec2 [n]; double r = 20;
 				for (int j=n-1; j>=0; j--) verts [j] = r * new Vec2
 					(-Math.Cos ((double)j/n * 2*Math.PI), Math.Sin ((double)j/n * 2*Math.PI));
@@ -86,7 +82,7 @@ namespace GlazeDev
 				var p = new Polygon (verts); p.CalcMass (1);
 				var b = new Body
 				{
-					gravity = new Vec2 (0,30),
+					gravity = gravity,
 					pos = new Vec2 (rand.NextDouble ()*600, rand.NextDouble ()*400)
 				};
 				b.AddShape (p); b.CalcProperties ();
@@ -101,8 +97,8 @@ namespace GlazeDev
 			{
 				for (int c=0; c<5; c++)
 				{
-					var b = G.BoxBody (200 + ((double)(r%2)/2 + c) * 60, 445 - r * 10, 0, 60,10);
-					b.gravity = new Vec2 (0,30);
+					var b = Tools.BoxBody (200 + ((double)(r%2)/2 + c) * 60, 445 - r * 9.7, 0, 60,10);
+					b.gravity = gravity;
 					space.AddBody (b);
 				}
 			}

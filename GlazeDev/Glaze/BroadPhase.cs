@@ -25,5 +25,12 @@ namespace Glaze
 					if (a.Value.aabb.IntersectH (b.Value.aabb))
 						NarrowPhase (a.Value, b.Value);
 		}
+		
+		public override IEnumerable<Shape> Query(AABB area)
+		{
+			foreach (Shape s in shapes)
+				if (area.b < s.aabb.t) yield break;
+				else if (s.aabb.Intersect (area)) yield return s;
+		}
 	}
 }

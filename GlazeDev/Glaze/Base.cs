@@ -123,7 +123,7 @@ namespace Glaze
 	public class Entry<T> where T : Entry<T>
 	{
 		internal LinkedListNode<T> node;
-		internal void Attach (LinkedList<T> list) { node = list.AddFirst (this as T); }
+		internal virtual void Attach (LinkedList<T> list) { node = list.AddFirst (this as T); }
 		internal virtual void Remove () { node.List.Remove (node); }
 	}
 	
