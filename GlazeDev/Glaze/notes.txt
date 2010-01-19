@@ -33,7 +33,7 @@ Body
 	gravity    : Vec2
 	massInv    : double
 	inertiaInv : double
-	group      : uint
+	group      : uint       // collision ignored if equal groups
 	AddShape       (s)  : void
 	RemoveShape    (s)  : void
 	CalcProperties ()   : void
@@ -44,10 +44,11 @@ Shape
 	material : Material
 	Area     : double
 	Inertia  : double
+	CalcMass () : void
 
 Polygon : Shape
-	vertL, vertP : Vec2[] // local and absolute vertice coords
-	Polygon (Vec2[] vertices)
+	vertL, vertP : Vec2[]   // local and absolute vertice coords
+	Polygon (vertices : Vec2[])
 
 Circle : Shape
 	radius      : double
@@ -64,8 +65,6 @@ TODO
   of a polygon - enables quicker creation of new instances.
 - Something similar for bodies, to remove the CalcMass and
   CalcProperties thing.
-
-- Maybe move syncing out of RunPhysics
 
 - Object pooling
 - Joints, springs

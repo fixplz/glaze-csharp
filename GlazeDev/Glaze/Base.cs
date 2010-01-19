@@ -4,6 +4,19 @@ using System.Collections.Generic;
 
 namespace Glaze
 {
+	public static class Config
+	{
+		public const double
+			areaMassRatio  = 0.01,
+			resolveSlop    = 0.2,
+			resolveBias    = 0.2;
+		
+		public static Material defaultMaterial =
+			new Material {restitution=0.2, friction=0.8};
+	}
+	
+	
+	
 	public abstract class Space
 	{
 		public LinkedList<Body>    bodies;
@@ -43,18 +56,20 @@ namespace Glaze
 		
 		public void RunPhysics (double dt)
 		{
-			foreach (Body b  in bodies) b.UpdateVelocity (dt);
-			foreach (Shape s in shapes) s.UpdateShape ();
+			foreach (Body b in bodies)
+				{ b.UpdateVelocity (dt); foreach (Shape s in b.shapes) s.UpdateShape (); }
 			
 			BroadPhase ();
 			
 			for (LinkedListNode<Arbiter> n = arbiters.First; n != null;)
 			{
 				Arbiter arb = n.Value; n = n.Next;
-				if (stamp - arb.stamp > 3) arb.Remove ();
-				else arb.Prestep (1/dt);
+				
+				if (stamp - arb.stamp > 3)  arb.Remove ();
+				else                        arb.Prestep (1/dt);
 			}
 			
+			// o hai fyi this is the bottleneck
 			for (int i=0; i<iterations; i++)
 				foreach (Arbiter arb in arbiters)
 					arb.Perform ();
@@ -75,7 +90,7 @@ namespace Glaze
 			if (a == b || (a.group != 0 && a.group == b.group)) return;
 			
 			Arbiter arb = null;
-			foreach (Arbiter x in arbiters)
+			foreach (Arbiter x in a.arbiters)
 				if ((x.sa == sa && x.sb == sb) || (x.sa == sb && x.sb == sa))
 					{ arb = x; break; }
 			
@@ -86,37 +101,26 @@ namespace Glaze
 			// TODO this is shit
 			bool make = arb == null;
 			
-			if (make) arb = new Arbiter (sa,sb);
+			if (make)  arb = new Arbiter (sa,sb);
+			else       { arb.sa = sa; arb.sb = sb; }
 			
-			if (!Calc.Check (sa, sb, arb)) return;
-			
-			if (make)
+			if (Calc.Check (sa, sb, arb))
 			{
-				//arb = new Arbiter (sa,sb);
-				a.arbiters.AddFirst (arb);
-				b.arbiters.AddFirst (arb);
-				arb.Attach (arbiters);
+				if (make)
+				{
+					a.arbiters.AddFirst (arb);
+					b.arbiters.AddFirst (arb);
+					arb.Attach (arbiters);
+				}
+				
+				arb.stamp = stamp;
 			}
-			else
-			{ arb.sa = sa; arb.sb = sb; }
-			
-			arb.stamp = stamp;
 		}
 		#endregion
 	}
 	
 	
-	
-	public static class Config
-	{
-		public const double
-			areaMassRatio  = 0.01,
-			resolveSlop    = 0.2,
-			resolveBias    = 0.2;
-		
-		public static Material defaultMaterial =
-			new Material {restitution=0.2, friction=0.8};
-	}
+	// TODO pool
 	
 	
 	
