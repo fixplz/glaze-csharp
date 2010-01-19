@@ -233,7 +233,6 @@ namespace Glaze
 		
 		internal static bool Circle2Poly   (Circle circle, Polygon poly, Arbiter arb)
 		{
-			
 			int len = poly.axisP.Length, ix = 0;
 			double max = Double.NegativeInfinity;
 			
@@ -246,10 +245,10 @@ namespace Glaze
 			
 			Vec2 v = poly.vertP [ix], u = poly.vertP [(ix+1)%len]; Axis a = poly.axisP [ix];
 			
-			double d = a.n*circle.pos;
+			double d = a.n.Cross (circle.pos);
 			
-			//if (d >= a.n.Cross (v)) return Circle2Circle (circle.pos, v, circle.radius, 0, arb);
-			//if (d <  a.n.Cross (u)) return Circle2Circle (circle.pos, u, circle.radius, 0, arb);
+			if (d > a.n.Cross (v)) return Circle2Circle (circle.pos, v, circle.radius, 0, arb);
+			if (d < a.n.Cross (u)) return Circle2Circle (circle.pos, u, circle.radius, 0, arb);
 			
 			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, -a.n, max, 0);
 			return true;
