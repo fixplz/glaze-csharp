@@ -1,8 +1,85 @@
 ﻿
 using System;
+using System.Collections.Generic;
 
 namespace Glaze
 {
+	public class Body : Entry <Body>
+	{
+		#region PROPERTIES
+		// motion components
+		public Vec2   pos,   vel;
+		public double angle, w;
+		
+		internal Vec2   velBias, forces;
+		internal double wBias,   torque;
+		
+		public Vec2 gravity;
+		
+		// local transform
+		internal Vec2 rot;
+		
+		// mass and inertia
+		public double massInv, inertiaInv;
+		
+		// bookkeeping
+		public LinkedList<Shape>    shapes;
+		public LinkedList<Arbiter>  arbiters;
+		
+		public uint group = 0;
+		#endregion
+		
+		#region DETAILS
+		public Body ()
+		{
+			shapes   = new LinkedList<Shape> ();
+			arbiters = new LinkedList<Arbiter> ();
+		}
+		
+		public void AddShape    (Shape s) { shapes.AddFirst (s); s.body = this; }
+		public void RemoveShape (Shape s) { shapes.Remove (s); s.Remove (); }
+		
+		public void CalcProperties ()
+		{
+			double mass = 0, inertia = 0;
+			foreach (Shape s in shapes)
+				{ mass += s.mass; inertia += s.mass*s.Inertia; }
+			massInv = 1.0/mass; inertiaInv = 1.0/inertia;
+		}
+		
+		public IEnumerable<Body> Contacts ()
+		{
+			Stack<Body> s = new Stack<Body> ();
+			foreach (Arbiter arb in arbiters)
+			{
+				Body other = arb.GetOther (this);
+				if (!s.Contains (other)) { s.Push (other); yield return other; }
+			}
+		}
+		#endregion
+		
+		#region INTERNAL CONTROLS
+		internal void UpdateVelocity (double dt)
+		{
+			double damping = 1; // TODO damping
+			vel = damping * vel + dt * (gravity + massInv * forces);
+			w   = damping * w   + dt * inertiaInv * torque;
+		}
+		
+		internal void UpdatePosition (double dt)
+		{
+			pos += dt * (vel + velBias); angle += dt * (w + wBias); rot = Vec2.Polar (angle);
+			velBias.Clear (); wBias = 0;
+		}
+		
+		internal void ApplyImpulse     (Vec2 j, Vec2 r) { vel     += massInv * j; w     += inertiaInv * (r * j.Right); }
+		internal void ApplyBiasImpulse (Vec2 j, Vec2 r) { velBias += massInv * j; wBias += inertiaInv * (r * j.Right); }
+		internal void ApplyForce       (Vec2 f, Vec2 r) { forces  += f; torque += (r * f.Right); }
+		#endregion
+	}
+	
+	
+	
 	public abstract class Shape : Entry <Shape>
 	{
 		public Material   material = Config.defaultMaterial;
@@ -29,6 +106,7 @@ namespace Glaze
 		public double  radius;
 		public Vec2    offset, pos;
 		
+		#region DETAILS
 		public Circle () { shapeType = ShapeType.Circle; }
 		
 		public override double Area    { get { return radius * radius * Math.PI; } }
@@ -39,7 +117,9 @@ namespace Glaze
 			pos = body.pos + offset.Rotate (body.rot);
 			aabb.SetExtents (pos, new Vec2 {x=radius, y=radius});
 		}
+		#endregion
 	}
+	
 	
 	
 	public class Polygon : Shape
@@ -50,6 +130,7 @@ namespace Glaze
 		internal uint id;
 		internal static uint next = 0;
 		
+		#region DETAILS
 		public Polygon (Vec2[] vertices)
 		{
 			id = next++;
@@ -127,6 +208,7 @@ namespace Glaze
 				axisP [i].d = axisP [i].n * body.pos + axisL [i].d;
 			}
 		}
+		#endregion
 	}
 	
 	
