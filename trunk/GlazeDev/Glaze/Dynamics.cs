@@ -4,103 +4,24 @@ using System.Collections.Generic;
 
 namespace Glaze
 {
-	public class Body : Entry <Body>
-	{
-		#region PROPERTIES
-		// motion components
-		public Vec2   pos,   vel;
-		public double angle, w;
-		
-		internal Vec2   velBias, forces;
-		internal double wBias,   torque;
-		
-		public Vec2 gravity;
-		
-		// local transform
-		internal Vec2 rot;
-		
-		// mass and inertia
-		public double massInv, inertiaInv;
-		
-		// bookkeeping
-		public LinkedList<Shape>    shapes;
-		public LinkedList<Arbiter>  arbiters;
-		
-		public uint group = 0;
-		#endregion
-		
-		public Body ()
-		{
-			shapes   = new LinkedList<Shape> ();
-			arbiters = new LinkedList<Arbiter> ();
-		}
-		
-		public void AddShape    (Shape s) { shapes.AddFirst (s); s.body = this; }
-		public void RemoveShape (Shape s) { shapes.Remove (s); s.Remove (); }
-		
-		public void CalcProperties ()
-		{
-			double mass = 0, inertia = 0;
-			foreach (Shape s in shapes)
-				{ mass += s.mass; inertia += s.mass*s.Inertia; }
-			massInv = 1.0/mass; inertiaInv = 1.0/inertia;
-		}
-		
-		public IEnumerable<Body> Contacts ()
-		{
-			Stack<Body> s = new Stack<Body> ();
-			foreach (Arbiter arb in arbiters)
-			{
-				Body other = arb.GetOther (this);
-				if (!s.Contains (other)) { s.Push (other); yield return other; }
-			}
-		}
-		
-		#region INTERNAL CONTROLS
-		internal void UpdateVelocity (double dt)
-		{
-			double damping = 1; // TODO damping
-			vel = damping * vel + dt * (gravity + massInv * forces);
-			w   = damping * w   + dt * inertiaInv * torque;
-		}
-		
-		internal void UpdatePosition (double dt)
-		{
-			pos += dt * (vel + velBias); angle += dt * (w + wBias); rot = Vec2.Polar (angle);
-			velBias.Clear (); wBias = 0;
-		}
-		
-		internal void ApplyImpulse     (Vec2 j, Vec2 r) { vel     += massInv * j; w     += inertiaInv * (r * j.Right); }
-		internal void ApplyBiasImpulse (Vec2 j, Vec2 r) { velBias += massInv * j; wBias += inertiaInv * (r * j.Right); }
-		internal void ApplyForce       (Vec2 f, Vec2 r) { forces  += f; torque += (r * f.Right); }
-		#endregion
-	}
-	
-	
-	
 	public class Arbiter : Entry <Arbiter>
 	{
 		public Shape sa,sb;
-		public double u = 0, e = 0;
+		public double e,u;
 		
 		internal uint stamp;
 		public LinkedList<Contact> contacts;
 		
-		internal Arbiter (Shape sa, Shape sb)
-		{
-			this.sa = sa; this.sb = sb;
-			contacts = new LinkedList<Contact> ();
-			e = sa.material.restitution * sb.material.restitution;
-			u = sa.material.friction    * sb.material.friction;
-		}
+		internal Arbiter () { contacts = new LinkedList<Contact> (); }
 		
+		public bool These (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
 		public Body GetOther (Body b) { return sa.body == b ? sb.body : sa.body; }
 		
 		internal void UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
 		{
 			Contact c = null;
 			foreach (Contact x in contacts) if (x.id == id) { c=x; break; }
-			if (c == null) { c = new Contact (id); c.Attach (contacts); }
+			if (c == null) { c = new Contact {id=id}; c.Attach (contacts); }
 			
 			c.p = p; c.n = n; c.dist = dist;
 			c.updated = true;
@@ -114,32 +35,26 @@ namespace Glaze
 		}
 		
 		#region RESOLUTION MATH
-		internal void Prestep (double dtInv)
+		internal void Prestep (double dt)
 		{
 			Body a = sa.body, b = sb.body;
 			
-			for (LinkedListNode<Contact> n = contacts.First; n != null; n = n.Next)
+			e = sa.material.restitution * sb.material.restitution;
+			u = sa.material.friction    * sb.material.friction;
+			
+			contacts.CleanAndIter (c => c.updated = !c.updated,
+			delegate (Contact c)
 			{
-				Contact c = n.Value;
-				if (!c.updated) { contacts.Remove (n); continue; }
-				c.updated = false;
+				c.r1 = c.p - a.pos; c.r2 = c.p - b.pos;
 				
-				c.r1     = c.p - a.pos;
-				c.r2     = c.p - b.pos;
+				c.nMass = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n);
+				c.tMass = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n.Left);
 				
-				c.nMass  = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n);
-				c.tMass  = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n.Left);
+				c.jBias = 0; c.bias = 1.0/dt * Calc.BiasDist (c.dist);
+				c.bounce = e * c.n * Calc.RelativeVelocity (a,b,c);
 				
-				c.jBias  = 0;
-				c.bias   = - dtInv * Config.resolveBias * Math.Min (0, c.dist + Config.resolveSlop);
-				
-				c.bounce = e * c.n * ((b.w * c.r2.Left + b.vel) - (a.w * c.r1.Left + a.vel));
-				
-				Vec2 cjT = c.jnAcc * c.n + c.jtAcc * c.n.Left;
-				
-				a.ApplyImpulse (-cjT, c.r1);
-				b.ApplyImpulse ( cjT, c.r2);
-			}
+				Calc.NormalImpulse (c.jnAcc,c.jtAcc, a,b,c);
+			});
 		}
 		
 		internal void Perform ()
@@ -148,38 +63,21 @@ namespace Glaze
 			
 			foreach (Contact c in contacts)
 			{
-				double old, jbn, jn, jtMax, jt;
-				Vec2 vb, cjT, vr;
+				double jbn, jn, jt; Vec2 vb, vr;
 				
-				vb       = (b.wBias * c.r2.Left + b.velBias) - (a.wBias * c.r1.Left + a.velBias);
+				vb   = Calc.RelativeBiasVelocity (a,b,c);
+				vr   = Calc.RelativeVelocity     (a,b,c);
 				
-				jbn      = c.nMass * (c.bias - vb * c.n);
-				old      = c.jBias;
-				c.jBias  = Math.Max (0, c.jBias + jbn);
-				jbn      = c.jBias - old;
+				jbn  = c.nMass * (vb * c.n - c.bias);
+				jn   = c.nMass * (vr * c.n + c.bounce);
+				jt   = c.tMass * (vr * c.n.Left);
 				
-				cjT      = jbn * c.n;
+				Calc.AddPositive (ref c.jBias, ref jbn);
+				Calc.AddPositive (ref c.jnAcc, ref jn);
+				Calc.AddClamp    (ref c.jtAcc, ref jt, u * c.jnAcc);
 				
-				a.ApplyBiasImpulse (-cjT, c.r1);
-				b.ApplyBiasImpulse ( cjT, c.r2);
-				
-				vr       = (b.w * c.r2.Left + b.vel) - (a.w * c.r1.Left + a.vel);
-				
-				jn       = - c.nMass * (c.bounce + vr * c.n);
-				old      = c.jnAcc;
-				c.jnAcc  = Math.Max (0, c.jnAcc + jn);
-				jn       = c.jnAcc - old;
-				
-				jtMax    = u * c.jnAcc;
-				jt       = -c.tMass * (vr * c.n.Left);
-				old      = c.jtAcc;
-				c.jtAcc  = Math.Min (jtMax, Math.Max (-jtMax, c.jtAcc + jt));
-				jt       = c.jtAcc - old;
-				
-				cjT      = c.n.Rotate (new Vec2 {x=jn,y=jt});
-				
-				a.ApplyImpulse (-cjT, c.r1);
-				b.ApplyImpulse ( cjT, c.r2);
+				Calc.NormalBiasImpulse (jbn,   a,b,c);
+				Calc.NormalImpulse     (jn,jt, a,b,c);
 			}
 		}
 		#endregion
@@ -192,7 +90,6 @@ namespace Glaze
 		public Vec2 p, n, r1, r2;
 		internal uint id; internal bool updated;
 		internal double dist, nMass, tMass, bounce, jnAcc=0, jtAcc=0, jBias, bias;
-		internal Contact (uint id) { this.id = id; }
 	}
 	
 	
@@ -200,6 +97,30 @@ namespace Glaze
 	internal static class Calc
 	{
 		#region AUX
+		internal static double BiasDist (double dist)
+			{ return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
+		
+		internal static void NormalImpulse (double jn, double jt, Body a, Body b, Contact c)
+			{ Vec2 v = jn*c.n+jt*c.n.Left; a.ApplyImpulse (-v, c.r1); b.ApplyImpulse (v, c.r2); }
+		
+		internal static void NormalBiasImpulse (double jbn, Body a, Body b, Contact c)
+			{ a.ApplyBiasImpulse (-jbn*c.n, c.r1); b.ApplyBiasImpulse (jbn*c.n, c.r2); }
+		
+		internal static void AddPositive (ref double old, ref double change)
+			{ change = Math.Max (-old, change); old += change; }
+		
+		internal static void AddClamp (ref double old, ref double change, double limit)
+		{
+			double result = Math.Max (-limit, Math.Min (limit, old+change));
+			change = result-old; old = result;
+		}
+		
+		internal static Vec2 RelativeVelocity (Body a, Body b, Contact c)
+			{ return (a.w * c.r1.Left + a.vel) - (b.w * c.r2.Left + b.vel); }
+		
+		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Contact c)
+			{ return (a.wBias * c.r1.Left + a.velBias) - (b.wBias * c.r2.Left + b.velBias); }
+		
 		internal static double KScalar (Body a, Body b, Vec2 r1, Vec2 r2, Vec2 n)
 		{
 			double r1xn = r1.Cross (n), r2xn = r2.Cross (n);
@@ -208,30 +129,32 @@ namespace Glaze
 		#endregion
 		
 		#region COLLISIONS
-		internal static bool Check (Shape sa, Shape sb, Arbiter arb)
+		internal static bool Check (Shape sa, Shape sb, ref Arbiter arb)
 		{
 			switch ((int)((int)sa.shapeType*5 + sb.shapeType))
 			{
-				case 0: return Circle2Circle ((Circle) sa,  (Circle) sb,  arb);
-				case 1: return Circle2Poly   ((Circle) sa,  (Polygon) sb, arb);
-				case 6: return Poly2Poly     ((Polygon) sa, (Polygon) sb, arb);
+				case 0: return Circle2Circle ((Circle) sa,  (Circle) sb,  ref arb);
+				case 1: return Circle2Poly   ((Circle) sa,  (Polygon) sb, ref arb);
+				case 6: return Poly2Poly     ((Polygon) sa, (Polygon) sb, ref arb);
 			}
 			
 			return false;
 		}
 		
-		internal static bool Circle2Circle (Circle sa, Circle sb, Arbiter arb)
-			{ return Circle2Circle (sa.pos, sb.pos, sa.radius, sb.radius, arb); }
+		internal static bool Circle2Circle (Circle sa, Circle sb, ref Arbiter arb)
+			{ return CircleContact (sa.pos, sb.pos, sa.radius, sb.radius, ref arb); }
 		
-		internal static bool Circle2Circle (Vec2 c1, Vec2 c2, double r1, double r2, Arbiter arb)
+		internal static bool CircleContact (Vec2 c1, Vec2 c2, double r1, double r2, ref Arbiter arb)
 		{
 			Vec2 d = c2 - c1; double min = r1 + r2, dist = d.LengthSq, distInv;
 			if (dist >= min*min) return false; dist = Math.Sqrt (dist); distInv = 1.0/dist;
+			
+			if (arb == null) arb = new Arbiter ();
 			arb.UpdateContact (c1 + (0.5 + distInv * (r1 - min/2)) * d, distInv*d, dist - min, 0);
 			return true;
 		}
 		
-		internal static bool Circle2Poly   (Circle circle, Polygon poly, Arbiter arb)
+		internal static bool Circle2Poly (Circle circle, Polygon poly, ref Arbiter arb)
 		{
 			int len = poly.axisP.Length, ix = 0;
 			double max = Double.NegativeInfinity;
@@ -239,26 +162,33 @@ namespace Glaze
 			for (int i=0; i<len; i++)
 			{
 				double dist = poly.axisP [i].n * circle.pos - poly.axisP [i].d - circle.radius;
-				if (dist > 0) return false;
-				if (dist > max) { max = dist; ix = i; }
+				if (dist > 0) return false; if (dist > max) { max = dist; ix = i; }
 			}
 			
 			Vec2 v = poly.vertP [ix], u = poly.vertP [(ix+1)%len]; Axis a = poly.axisP [ix];
 			
 			double d = a.n.Cross (circle.pos);
 			
-			if (d > a.n.Cross (v)) return Circle2Circle (circle.pos, v, circle.radius, 0, arb);
-			if (d < a.n.Cross (u)) return Circle2Circle (circle.pos, u, circle.radius, 0, arb);
+			if (d > a.n.Cross (v)) return CircleContact (circle.pos, v, circle.radius, 0, ref arb);
+			if (d < a.n.Cross (u)) return CircleContact (circle.pos, u, circle.radius, 0, ref arb);
 			
+			if (arb == null) arb = new Arbiter ();
 			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, -a.n, max, 0);
 			return true;
 		}
 		
-		internal static bool Poly2Poly  (Polygon sa, Polygon sb, Arbiter arb)
+		internal static bool Poly2Poly (Polygon sa, Polygon sb, ref Arbiter arb)
 		{
 			Axis a1, a2;
 			if (!(MinSepAxis (sa,sb, out a1) && MinSepAxis (sb,sa, out a2))) return false;
-			FindVerts (sa,sb, a1.d > a2.d ? a1 : -a2, arb);
+			
+			if (arb == null) arb = new Arbiter ();
+			
+			// TODO now this is shit
+			if (a2.d > a1.d) {var t=sb; sb=sa; sa=t;}
+			arb.sa=sa; arb.sb=sb;
+			
+			FindVerts (sa,sb, a1.d > a2.d ? a1 : a2, arb);
 			return true;
 		}
 		
@@ -279,30 +209,22 @@ namespace Glaze
 			return true;
 		}
 		
-		internal static void FindVerts  (Polygon sa, Polygon sb, Axis a, Arbiter arb)
+		internal static void FindVerts (Polygon sa, Polygon sb, Axis a, Arbiter arb)
 		{
 			uint id = sa.id << 8;
 			foreach (Vec2 v in sa.vertP)
-			{
-				if (ContainsVert (sb,v,-a.n))
-					arb.UpdateContact (v, a.n, a.d, id);
-				id++;
-			}
+				{ if (ContainsVert (sb,v)) arb.UpdateContact (v, a.n, a.d, id); id++; }
 			
-			id = sb.id << 8;
+			id = sa.id << 8;
 			foreach (Vec2 v in sb.vertP)
-			{
-				if (ContainsVert (sa,v,a.n))
-					arb.UpdateContact (v, a.n, a.d, id);
-				id++;
-			}
+				{ if (ContainsVert (sa,v,-a.n)) arb.UpdateContact (v, a.n, a.d, id); id++; }
 		}
 		
 		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n)
-		{
-			foreach (Axis a in sa.axisP) if (a.n*n >= 0 && a.n*v > a.d) return false;
-			return true;
-		}
+			{ foreach (Axis a in sa.axisP) if (a.n*n <= 0 && a.n*v > a.d) return false; return true; }
+		
+		internal static bool ContainsVert (Polygon sa, Vec2 v)
+			{ foreach (Axis a in sa.axisP) if (a.n*v > a.d) return false; return true; }
 		#endregion
 	}
 }

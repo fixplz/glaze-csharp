@@ -8,11 +8,11 @@ namespace Glaze
 	{
 		public const double
 			areaMassRatio  = 0.01,
-			resolveSlop    = 0.2,
-			resolveBias    = 0.2;
+			resolveSlop    = 0.3,
+			resolveBias    = 0.1;
 		
 		public static Material defaultMaterial =
-			new Material {restitution=0.2, friction=0.8};
+			new Material {restitution=0.2, friction=0.9};
 	}
 	
 	
@@ -23,7 +23,7 @@ namespace Glaze
 		public LinkedList<Shape>   shapes;
 		public LinkedList<Arbiter> arbiters;
 		
-		public int iterations = 10;
+		public int iterations = 5;
 		
 		internal uint stamp = 0;
 		
@@ -61,15 +61,9 @@ namespace Glaze
 			
 			BroadPhase ();
 			
-			for (LinkedListNode<Arbiter> n = arbiters.First; n != null;)
-			{
-				Arbiter arb = n.Value; n = n.Next;
-				
-				if (stamp - arb.stamp > 3)  arb.Remove ();
-				else                        arb.Prestep (1/dt);
-			}
+			arbiters.CleanAndIter (arb => stamp - arb.stamp > 3, arb => arb.Prestep (dt));
 			
-			// o hai fyi this is the bottleneck
+			// generally 70% of time spent here
 			for (int i=0; i<iterations; i++)
 				foreach (Arbiter arb in arbiters)
 					arb.Perform ();
@@ -85,29 +79,25 @@ namespace Glaze
 		
 		protected void NarrowPhase (Shape sa, Shape sb)
 		{
-			Body a = sa.body, b = sb.body;
+			if (sa.shapeType > sb.shapeType) { var t=sa; sa=sb; sb=t; }
 			
+			Body a = sa.body, b = sb.body;
 			if (a == b || (a.group != 0 && a.group == b.group)) return;
 			
 			Arbiter arb = null;
-			foreach (Arbiter x in a.arbiters)
-				if ((x.sa == sa && x.sb == sb) || (x.sa == sb && x.sb == sa))
-					{ arb = x; break; }
+			foreach (Arbiter x in a.arbiters) if (x.These (sa,sb)) { arb = x; break; }
 			
-			if (arb != null) if (arb.stamp == stamp) return;
+			bool first = arb == null;
 			
-			if (sa.shapeType > sb.shapeType) { var t=sa; sa=sb; sb=t; }
+			if (!first)
+				if (arb.stamp == stamp) return;
+				else { arb.sa = sa; arb.sb = sb; }
 			
-			// TODO this is shit
-			bool make = arb == null;
-			
-			if (make)  arb = new Arbiter (sa,sb);
-			else       { arb.sa = sa; arb.sb = sb; }
-			
-			if (Calc.Check (sa, sb, arb))
+			if (Calc.Check (sa, sb, ref arb))
 			{
-				if (make)
+				if (first)
 				{
+					if (arb.sa == null) { arb.sa = sa; arb.sb = sb;}
 					a.arbiters.AddFirst (arb);
 					b.arbiters.AddFirst (arb);
 					arb.Attach (arbiters);
@@ -120,9 +110,6 @@ namespace Glaze
 	}
 	
 	
-	// TODO pool
-	
-	
 	
 	public class Entry<T> where T : Entry<T>
 	{
@@ -131,8 +118,18 @@ namespace Glaze
 		internal virtual void Remove () { node.List.Remove (node); }
 	}
 	
-	public class PoolEntry<T> : Entry<T> where T : PoolEntry <T>
+	
+	
+	internal static class Misc
 	{
-		
+		internal static void CleanAndIter<T> (this LinkedList<T> list, Predicate<T> predicate, Action<T> action)
+			where T : Entry<T>
+		{
+			for (LinkedListNode<T> n = list.First; n != null;)
+			{
+				T x = n.Value; n = n.Next;
+				if (predicate (x)) x.Remove (); else action (x);
+			}
+		}
 	}
 }

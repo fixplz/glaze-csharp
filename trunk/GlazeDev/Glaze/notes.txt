@@ -38,6 +38,11 @@ Body
 	RemoveShape    (s)  : void
 	CalcProperties ()   : void
 
+Arbiter
+	sa,sb    : Shape
+	contacts : List<Contact>
+	GetOther (b : Body) : Body
+
 Shape
 	body     : Body
 	aabb     : AABB
@@ -61,12 +66,11 @@ Vec2 x,y     : double
 
 TODO
 
-- Shape etalons that hold static data like the local vertices
+- Shape defs that hold static data like the local vertices
   of a polygon - enables quicker creation of new instances.
 - Something similar for bodies, to remove the CalcMass and
   CalcProperties thing.
 
-- Object pooling
 - Joints, springs
 - Use callbacks to get shape group and combined friction/restitution
 
