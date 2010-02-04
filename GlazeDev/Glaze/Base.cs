@@ -57,11 +57,18 @@ namespace Glaze
 		public void RunPhysics (double dt)
 		{
 			foreach (Body b in bodies)
-				{ b.UpdateVelocity (dt); foreach (Shape s in b.shapes) s.UpdateShape (); }
+			{
+				b.UpdateVelocity (dt);
+				foreach (Shape s in b.shapes) s.UpdateShape ();
+			}
 			
 			BroadPhase ();
 			
-			arbiters.CleanAndIter (arb => stamp - arb.stamp > 3, arb => arb.Prestep (dt));
+			for (var n = arbiters.First; n != null;)
+			{
+				Arbiter arb = n.Value; n = n.Next;
+				if (stamp - arb.stamp > 3) arb.Remove (); else arb.Prestep (dt);
+			}
 			
 			// generally 70% of time spent here
 			for (int i=0; i<iterations; i++)
@@ -116,20 +123,5 @@ namespace Glaze
 		internal LinkedListNode<T> node;
 		internal virtual void Attach (LinkedList<T> list) { node = list.AddFirst (this as T); }
 		internal virtual void Remove () { node.List.Remove (node); }
-	}
-	
-	
-	
-	internal static class Misc
-	{
-		internal static void CleanAndIter<T> (this LinkedList<T> list, Predicate<T> predicate, Action<T> action)
-			where T : Entry<T>
-		{
-			for (LinkedListNode<T> n = list.First; n != null;)
-			{
-				T x = n.Value; n = n.Next;
-				if (predicate (x)) x.Remove (); else action (x);
-			}
-		}
 	}
 }
