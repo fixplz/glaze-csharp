@@ -9,22 +9,29 @@ namespace Glaze
 		public Shape sa,sb;
 		public double e,u;
 		
-		internal uint stamp;
-		public LinkedList<Contact> contacts;
+		internal uint stamp, used = 0;
+		public Contact[] contacts;
 		
-		internal Arbiter () { contacts = new LinkedList<Contact> (); }
+		internal Arbiter (uint n) { contacts = new Contact [n]; }
 		
-		public bool These (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
+		public bool Belong (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
 		public Body GetOther (Body b) { return sa.body == b ? sb.body : sa.body; }
 		
-		internal void UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
+		public IEnumerable<Contact> Contacts ()
+			{ for (uint i=0; i<used; i++) yield return contacts [i]; }
+		
+		internal bool UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
 		{
-			Contact c = null;
-			foreach (Contact x in contacts) if (x.id == id) { c=x; break; }
-			if (c == null) { c = new Contact {id=id}; c.Attach (contacts); }
+			Contact c; uint i=0;
+			for (; i<used; i++) if ((c = contacts [i]).id == id) goto found;
 			
-			c.p = p; c.n = n; c.dist = dist;
-			c.updated = true;
+			if (used == contacts.Length) return false;
+			c = contacts [used] ?? (contacts [used] = Contact.Assign ()); used++;
+			
+			c.id = id; c.jnAcc = 0; c.jtAcc = 0;
+		found:
+			c.p = p; c.n = n; c.dist = dist; c.updated = true;
+			return true;
 		}
 		
 		internal override void Remove ()
@@ -37,14 +44,22 @@ namespace Glaze
 		#region RESOLUTION MATH
 		internal void Prestep (double dt)
 		{
-			Body a = sa.body, b = sb.body;
-			
 			e = sa.material.restitution * sb.material.restitution;
 			u = sa.material.friction    * sb.material.friction;
 			
-			contacts.CleanAndIter (c => c.updated = !c.updated,
-			delegate (Contact c)
+			Body a = sa.body, b = sb.body;
+			
+			for (uint i=0; i<used; i++)
 			{
+			start:
+				Contact c = contacts [i];
+				if (!c.updated)
+				{
+					if (i == --used) break;
+					contacts [i] = contacts [used]; contacts [used] = c; goto start;
+				}
+				c.updated = false;
+				
 				c.r1 = c.p - a.pos; c.r2 = c.p - b.pos;
 				
 				c.nMass = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n);
@@ -54,15 +69,17 @@ namespace Glaze
 				c.bounce = e * c.n * Calc.RelativeVelocity (a,b,c);
 				
 				Calc.NormalImpulse (c.jnAcc,c.jtAcc, a,b,c);
-			});
+			}
 		}
 		
 		internal void Perform ()
 		{
 			Body a = sa.body, b = sb.body;
 			
-			foreach (Contact c in contacts)
+			for (uint i=0; i<used; i++)
 			{
+				Contact c = contacts [i];
+				
 				double jbn, jn, jt; Vec2 vb, vr;
 				
 				vb   = Calc.RelativeBiasVelocity (a,b,c);
@@ -85,11 +102,15 @@ namespace Glaze
 	
 	
 	
-	public class Contact : Entry<Contact>
+	public class Contact
 	{
+		internal static Stack<Contact> pool = new Stack<Contact> (100);
+		internal static Contact Assign () { return pool.Count != 0 ? pool.Pop () : new Contact (); }
+		internal static void Retire (Contact c) { pool.Push (c); }
+		
 		public Vec2 p, n, r1, r2;
 		internal uint id; internal bool updated;
-		internal double dist, nMass, tMass, bounce, jnAcc=0, jtAcc=0, jBias, bias;
+		internal double dist, nMass,tMass, bounce, jnAcc,jtAcc, jBias,bias;
 	}
 	
 	
@@ -126,6 +147,13 @@ namespace Glaze
 			double r1xn = r1.Cross (n), r2xn = r2.Cross (n);
 			return a.massInv+b.massInv + a.inertiaInv*r1xn*r1xn + b.inertiaInv*r2xn*r2xn;
 		}
+		
+		internal static double Minumum <T> (this IEnumerable<T> list, Func<T,double> f)
+		{
+			double min = Double.PositiveInfinity;
+			foreach (T x in list) min = Math.Min (min, f (x));
+			return min;
+		}
 		#endregion
 		
 		#region COLLISIONS
@@ -149,7 +177,7 @@ namespace Glaze
 			Vec2 d = c2 - c1; double min = r1 + r2, dist = d.LengthSq, distInv;
 			if (dist >= min*min) return false; dist = Math.Sqrt (dist); distInv = 1.0/dist;
 			
-			if (arb == null) arb = new Arbiter ();
+			if (arb == null) arb = new Arbiter (1);
 			arb.UpdateContact (c1 + (0.5 + distInv * (r1 - min/2)) * d, distInv*d, dist - min, 0);
 			return true;
 		}
@@ -172,7 +200,7 @@ namespace Glaze
 			if (d > a.n.Cross (v)) return CircleContact (circle.pos, v, circle.radius, 0, ref arb);
 			if (d < a.n.Cross (u)) return CircleContact (circle.pos, u, circle.radius, 0, ref arb);
 			
-			if (arb == null) arb = new Arbiter ();
+			if (arb == null) arb = new Arbiter (1);
 			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, -a.n, max, 0);
 			return true;
 		}
@@ -182,10 +210,8 @@ namespace Glaze
 			Axis a1, a2;
 			if (!(MinSepAxis (sa,sb, out a1) && MinSepAxis (sb,sa, out a2))) return false;
 			
-			if (arb == null) arb = new Arbiter ();
-			
-			// TODO now this is shit
-			if (a2.d > a1.d) {var t=sb; sb=sa; sa=t;}
+			if (a2.d > a1.d) {var t=sb; sb=sa; sa=t;} // sa is the shape whose axis is used
+			if (arb == null) arb = new Arbiter (3);
 			arb.sa=sa; arb.sb=sb;
 			
 			FindVerts (sa,sb, a1.d > a2.d ? a1 : a2, arb);
@@ -198,12 +224,8 @@ namespace Glaze
 			
 			foreach (Axis a in sa.axisP)
 			{
-				double min = Double.PositiveInfinity;
-				foreach (Vec2 v in sb.vertP) min = Math.Min (min, a.n*v);
-				min -= a.d;
-				
-				if (min > 0) return false;
-				if (min > axis.d) axis = new Axis {n=a.n,d=min};
+				double min = sb.vertP.Minumum (v => a.n*v) - a.d;
+				if (min > 0) return false; if (min > axis.d) axis = new Axis {n=a.n,d=min};
 			}
 			
 			return true;
@@ -213,11 +235,19 @@ namespace Glaze
 		{
 			uint id = sa.id << 8;
 			foreach (Vec2 v in sa.vertP)
-				{ if (ContainsVert (sb,v)) arb.UpdateContact (v, a.n, a.d, id); id++; }
+			{
+				if (ContainsVert (sb,v))
+					if (!arb.UpdateContact (v, a.n, a.d, id)) return;
+				id++;
+			}
 			
-			id = sa.id << 8;
+			id = sb.id << 8;
 			foreach (Vec2 v in sb.vertP)
-				{ if (ContainsVert (sa,v,-a.n)) arb.UpdateContact (v, a.n, a.d, id); id++; }
+			{
+				if (ContainsVert (sa,v,-a.n))
+					if (!arb.UpdateContact (v, a.n, a.d, id)) return;
+				id++;
+			}
 		}
 		
 		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n)

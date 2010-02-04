@@ -12,7 +12,7 @@ namespace GlazeDev
 	{
 		public Space space;
 		public Shape selected;
-		public Vec2  mouse, gravity;
+		public Vec2  mouse,offset, gravity;
 		
 		public MainForm()
 		{
@@ -24,34 +24,46 @@ namespace GlazeDev
 			gravity = new Vec2 (0,200);
 			
 			var ground = new Body {pos=new Vec2 (300,500) };
-			ground.AddShape (Tools.BoxShape (0,0,      0, 1000,100));
-			ground.AddShape (Tools.BoxShape (-550,-150, 0, 100,400));
-			ground.AddShape (Tools.BoxShape ( 550,-150, 0, 100,400));
+			ground.AddShape (Tools.BoxShape (0,0,         0,  1000,100));
+			ground.AddShape (Tools.BoxShape (-550,-150, -0.4, 100,400));
+			ground.AddShape (Tools.BoxShape ( 550,-150,  0.4, 100,400));
 			ground.massInv = 0; ground.inertiaInv = 0;
 			space.AddBody (ground);
 			
-			Test2 ();
+			Test1 ();
 			
 			var t       = new Timer ();
 			t.Interval  = 1000/40;
 			t.Tick      += delegate
 			{
-				int ticks = 10;
+				int ticks = 8;
 				for (int i=0; i<ticks; i++)
 				{
 					if (selected != null)
-						selected.body.vel = 0.9 * selected.body.vel + 0.5*(mouse - selected.body.pos);
-					space.RunPhysics (1.0/(ticks*20));
+					{
+						var b = selected.body;
+						b.vel = 0.9 * b.vel + 2 * (mouse - (b.pos + offset.Rotate (b.rot)));
+					}
+					space.RunPhysics (0.05/ticks);
 				}
 				Invalidate ();
 			};
 			t.Start ();
 		}
 		
-		protected override void OnMouseMove(MouseEventArgs e) { mouse = new Vec2 (e.X,e.Y); }
-		protected override void OnMouseUp(MouseEventArgs e) { selected = null; }
-		protected override void OnMouseDown(MouseEventArgs e)
-			{ selected = space.Query (new AABB {l=e.X, t=e.Y, r=e.X+1, b=e.Y+1}).FirstOrDefault (); }
+		protected override void OnMouseMove (MouseEventArgs e) { mouse = new Vec2 (e.X,e.Y); }
+		protected override void OnMouseUp   (MouseEventArgs e) { selected = null; }
+		
+		protected override void OnMouseDown (MouseEventArgs e)
+		{
+			var area = new AABB (); area.SetExtents (mouse, new Vec2 (1,1));
+			selected = space.Query (area).FirstOrDefault (s => s.ContainsPoint (mouse));
+			if (selected != null)
+			{
+				var b = selected.body; 
+				offset = (mouse - b.pos).Rotate (new Vec2 (b.rot.x,-b.rot.y));
+			}
+		}
 		
 		protected override void OnPaint(PaintEventArgs e)
 		{
@@ -75,12 +87,11 @@ namespace GlazeDev
 		
 		public void Test2 ()
 		{
-			for (int i=0; i<10; i++)
+			for (int i=0; i<100; i++)
 			{
-				var n = 3;//rand.Next (5) + 3;
-				var verts = new Vec2 [n]; double r = 50;
-				for (int j=n-1; j>=0; j--) verts [j] = r * new Vec2
-					(-Math.Cos ((double)j/n * 2*Math.PI), Math.Sin ((double)j/n * 2*Math.PI));
+				var n = rand.Next (3) + 3;
+				var verts = new Vec2 [n]; double r = 20;
+				for (int j=0; j<n; j++) verts [j] = r * Vec2.Polar ((double)(n-j)/n * 2*Math.PI);
 				
 				var p = new Polygon (verts); p.CalcMass (1);
 				var b = new Body { gravity = gravity, pos = new Vec2 (getrand (600), getrand (400)) };
@@ -92,15 +103,16 @@ namespace GlazeDev
 		
 		public void Test3 ()
 		{
-			for (int r=0; r<30; r++)
-			for (int c=0; c<5+(1+r)%2; c++)
+			for (int r=0; r<30;        r++)
+			for (int c=0; c<6+(1+r)%2; c++)
 			{
-				var b = Tools.BoxBody (150 + 60*((double)(r%2)/2 + c), 445 - r * 10, 0, 60,10);
+				var b = Tools.BoxBody (130 + 60*((double)(r%2)/2 + c), 445 - r * 10, 0, 60,10);
 				b.gravity = gravity;
 				space.AddBody (b);
 			}
 		}
 		
+		// this test demonstrates an inherent bad behavior with long rectangles - maybe I can fix this
 		public void Test4 ()
 		{
 			for (int r=0; r<20; r++)

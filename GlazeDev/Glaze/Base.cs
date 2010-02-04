@@ -85,7 +85,7 @@ namespace Glaze
 			if (a == b || (a.group != 0 && a.group == b.group)) return;
 			
 			Arbiter arb = null;
-			foreach (Arbiter x in a.arbiters) if (x.These (sa,sb)) { arb = x; break; }
+			foreach (Arbiter x in a.arbiters) if (x.Belong (sa,sb)) { arb = x; break; }
 			
 			bool first = arb == null;
 			

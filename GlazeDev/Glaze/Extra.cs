@@ -45,8 +45,6 @@ namespace Glaze
 		}
 		
 		
-		public static LinkedList<Vec2> spots = new LinkedList<Vec2> ();
-		
 		public static void DrawWorld (Space sp, Graphics g)
 		{
 			foreach (Shape s in sp.shapes)
@@ -72,18 +70,8 @@ namespace Glaze
 			}
 			
 			foreach (Arbiter arb in sp.arbiters)
-				foreach (Contact c in arb.contacts)
+				foreach (Contact c in arb.Contacts ())
 					g.FillEllipse (Brushes.Green, (float)c.p.x-2, (float)c.p.y-2, 4,4);
-			
-			/*
-			foreach (Vec2 s in spots)
-			{
-				Pen p = new Pen (Color.Red, 3); float size = 6;
-				g.DrawLine (p, (float)s.x - size, (float)s.y - size, (float)s.x + size, (float)s.y + size);
-				g.DrawLine (p, (float)s.x - size, (float)s.y + size, (float)s.x + size, (float)s.y - size);
-			}
-			spots.Clear ();
-			*/
 		}
 		
 		public static PointF AsPoint (Vec2 v)
