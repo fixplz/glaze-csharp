@@ -4,12 +4,12 @@ using System.Collections.Generic;
 
 namespace Glaze
 {
-	public class Arbiter : Entry <Arbiter>
+	public sealed class Arbiter : Entry <Arbiter>
 	{
 		public Shape sa,sb;
 		public double e,u;
 		
-		internal uint stamp, used = 0;
+		internal uint stamp; internal int used = 0;
 		public Contact[] contacts;
 		
 		internal Arbiter (uint n) { contacts = new Contact [n]; }
@@ -17,17 +17,16 @@ namespace Glaze
 		public bool Belong (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
 		public Body GetOther (Body b) { return sa.body == b ? sb.body : sa.body; }
 		
-		public IEnumerable<Contact> Contacts ()
-			{ for (uint i=0; i<used; i++) yield return contacts [i]; }
+		public IEnumerable<Contact> Contacts () { for (int i=0; i<used; i++) yield return contacts [i]; }
 		
 		internal bool UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
 		{
-			Contact c; uint i=0;
-			for (; i<used; i++) if ((c = contacts [i]).id == id) goto found;
+			Contact c;
+			for (int i=0; i<used; i++) { c = contacts [i]; if (c.id == id) goto found; }
 			
 			if (used == contacts.Length) return false;
-			c = contacts [used] ?? (contacts [used] = Contact.Assign ()); used++;
 			
+			c = contacts [used] ?? (contacts [used] = Contact.Assign ()); used++;
 			c.id = id; c.jnAcc = 0; c.jtAcc = 0;
 		found:
 			c.p = p; c.n = n; c.dist = dist; c.updated = true;
@@ -39,6 +38,8 @@ namespace Glaze
 			base.Remove ();
 			sa.body.arbiters.Remove (this);
 			sb.body.arbiters.Remove (this);
+			for (int i=0; i < contacts.Length && contacts [i] != null; i++)
+				Contact.Retire (contacts [i]);
 		}
 		
 		#region RESOLUTION MATH
@@ -47,62 +48,21 @@ namespace Glaze
 			e = sa.material.restitution * sb.material.restitution;
 			u = sa.material.friction    * sb.material.friction;
 			
-			Body a = sa.body, b = sb.body;
-			
-			for (uint i=0; i<used; i++)
+			for (int i = used-1; i>=0; i--)
 			{
-			start:
 				Contact c = contacts [i];
-				if (!c.updated)
-				{
-					if (i == --used) break;
-					contacts [i] = contacts [used]; contacts [used] = c; goto start;
-				}
-				c.updated = false;
-				
-				c.r1 = c.p - a.pos; c.r2 = c.p - b.pos;
-				
-				c.nMass = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n);
-				c.tMass = 1.0 / Calc.KScalar (a, b, c.r1, c.r2, c.n.Left);
-				
-				c.jBias = 0; c.bias = 1.0/dt * Calc.BiasDist (c.dist);
-				c.bounce = e * c.n * Calc.RelativeVelocity (a,b,c);
-				
-				Calc.NormalImpulse (c.jnAcc,c.jtAcc, a,b,c);
+				if (!c.updated) { if (i < --used) { contacts [i] = contacts [used]; contacts [used] = c; } }
+				else            { c.updated = false; c.Prestep (dt, this); }
 			}
 		}
 		
-		internal void Perform ()
-		{
-			Body a = sa.body, b = sb.body;
-			
-			for (uint i=0; i<used; i++)
-			{
-				Contact c = contacts [i];
-				
-				double jbn, jn, jt; Vec2 vb, vr;
-				
-				vb   = Calc.RelativeBiasVelocity (a,b,c);
-				vr   = Calc.RelativeVelocity     (a,b,c);
-				
-				jbn  = c.nMass * (vb * c.n - c.bias);
-				jn   = c.nMass * (vr * c.n + c.bounce);
-				jt   = c.tMass * (vr * c.n.Left);
-				
-				Calc.AddPositive (ref c.jBias, ref jbn);
-				Calc.AddPositive (ref c.jnAcc, ref jn);
-				Calc.AddClamp    (ref c.jtAcc, ref jt, u * c.jnAcc);
-				
-				Calc.NormalBiasImpulse (jbn,   a,b,c);
-				Calc.NormalImpulse     (jn,jt, a,b,c);
-			}
-		}
+		internal void Perform () { for (int i=0; i<used; i++) contacts [i].Perform (this); }
 		#endregion
 	}
 	
 	
 	
-	public class Contact
+	public sealed class Contact
 	{
 		internal static Stack<Contact> pool = new Stack<Contact> (100);
 		internal static Contact Assign () { return pool.Count != 0 ? pool.Pop () : new Contact (); }
@@ -111,6 +71,40 @@ namespace Glaze
 		public Vec2 p, n, r1, r2;
 		internal uint id; internal bool updated;
 		internal double dist, nMass,tMass, bounce, jnAcc,jtAcc, jBias,bias;
+		
+		internal void Prestep (double dt, Arbiter arb)
+		{
+			Body a = arb.sa.body, b = arb.sb.body;
+			r1 = p - a.pos; r2 = p - b.pos;
+			
+			nMass = 1.0 / Calc.KScalar (a,b, r1,r2, n);
+			tMass = 1.0 / Calc.KScalar (a,b, r1,r2, n.Left);
+			
+			jBias = 0; bias = 1.0/dt * Calc.BiasDist (dist);
+			bounce = arb.e * n * Calc.RelativeVelocity (a,b, this);
+			
+			Calc.NormalImpulse (jnAcc,jtAcc, a,b, this);
+		}
+		
+		internal void Perform (Arbiter arb)
+		{
+			Body a = arb.sa.body, b = arb.sb.body;
+			double jbn, jn, jt; Vec2 vb, vr;
+			
+			vb   = Calc.RelativeBiasVelocity (a,b, this);
+			vr   = Calc.RelativeVelocity     (a,b, this);
+			
+			jbn  = nMass * (vb * n - bias);
+			jn   = nMass * (vr * n + bounce);
+			jt   = tMass * (vr * n.Left);
+			
+			Calc.AddPositive (ref jBias, ref jbn);
+			Calc.AddPositive (ref jnAcc, ref jn);
+			Calc.AddClamp    (ref jtAcc, ref jt, arb.u * jnAcc);
+			
+			Calc.NormalBiasImpulse (jbn,   a,b, this);
+			Calc.NormalImpulse     (jn,jt, a,b, this);
+		}
 	}
 	
 	
@@ -122,7 +116,7 @@ namespace Glaze
 			{ return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
 		
 		internal static void NormalImpulse (double jn, double jt, Body a, Body b, Contact c)
-			{ Vec2 v = jn*c.n+jt*c.n.Left; a.ApplyImpulse (-v, c.r1); b.ApplyImpulse (v, c.r2); }
+		{ Vec2 v = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-v, c.r1); b.ApplyImpulse (v, c.r2); }
 		
 		internal static void NormalBiasImpulse (double jbn, Body a, Body b, Contact c)
 			{ a.ApplyBiasImpulse (-jbn*c.n, c.r1); b.ApplyBiasImpulse (jbn*c.n, c.r2); }
@@ -146,13 +140,6 @@ namespace Glaze
 		{
 			double r1xn = r1.Cross (n), r2xn = r2.Cross (n);
 			return a.massInv+b.massInv + a.inertiaInv*r1xn*r1xn + b.inertiaInv*r2xn*r2xn;
-		}
-		
-		internal static double Minumum <T> (this IEnumerable<T> list, Func<T,double> f)
-		{
-			double min = Double.PositiveInfinity;
-			foreach (T x in list) min = Math.Min (min, f (x));
-			return min;
 		}
 		#endregion
 		
@@ -224,7 +211,8 @@ namespace Glaze
 			
 			foreach (Axis a in sa.axisP)
 			{
-				double min = sb.vertP.Minumum (v => a.n*v) - a.d;
+				double min = Double.PositiveInfinity;
+				foreach (Vec2 v in sb.vertP) min = Math.Min (min, a.n*v); min -= a.d;
 				if (min > 0) return false; if (min > axis.d) axis = new Axis {n=a.n,d=min};
 			}
 			
