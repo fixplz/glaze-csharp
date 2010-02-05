@@ -10,7 +10,7 @@ namespace Glaze
 		public double e,u;
 		
 		internal uint stamp; internal int used = 0;
-		public Contact[] contacts;
+		internal Contact[] contacts;
 		
 		internal Arbiter (uint n) { contacts = new Contact [n]; }
 		
@@ -19,6 +19,7 @@ namespace Glaze
 		
 		public IEnumerable<Contact> Contacts () { for (int i=0; i<used; i++) yield return contacts [i]; }
 		
+		#region INTERNALS
 		internal bool UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
 		{
 			Contact c;
@@ -42,7 +43,6 @@ namespace Glaze
 				Contact.Retire (contacts [i]);
 		}
 		
-		#region RESOLUTION MATH
 		internal void Prestep (double dt)
 		{
 			e = sa.material.restitution * sb.material.restitution;
@@ -68,10 +68,15 @@ namespace Glaze
 		internal static Contact Assign () { return pool.Count != 0 ? pool.Pop () : new Contact (); }
 		internal static void Retire (Contact c) { pool.Push (c); }
 		
-		public Vec2 p, n, r1, r2;
-		internal uint id; internal bool updated;
-		internal double dist, nMass,tMass, bounce, jnAcc,jtAcc, jBias,bias;
+		// position, normal, penetration, normal and tangent impulses
+		public Vec2 p, n;
+		public double dist, jnAcc,jtAcc;
 		
+		internal Vec2 r1, r2;
+		internal double nMass,tMass, bounce, jBias,bias;
+		internal uint id; internal bool updated;
+		
+		#region RESOLUTION MATH
 		internal void Prestep (double dt, Arbiter arb)
 		{
 			Body a = arb.sa.body, b = arb.sb.body;
@@ -105,6 +110,7 @@ namespace Glaze
 			Calc.NormalBiasImpulse (jbn,   a,b, this);
 			Calc.NormalImpulse     (jn,jt, a,b, this);
 		}
+		#endregion
 	}
 	
 	
@@ -116,7 +122,7 @@ namespace Glaze
 			{ return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
 		
 		internal static void NormalImpulse (double jn, double jt, Body a, Body b, Contact c)
-		{ Vec2 v = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-v, c.r1); b.ApplyImpulse (v, c.r2); }
+			{ Vec2 v = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-v, c.r1); b.ApplyImpulse (v, c.r2); }
 		
 		internal static void NormalBiasImpulse (double jbn, Body a, Body b, Contact c)
 			{ a.ApplyBiasImpulse (-jbn*c.n, c.r1); b.ApplyBiasImpulse (jbn*c.n, c.r2); }
@@ -131,10 +137,10 @@ namespace Glaze
 		}
 		
 		internal static Vec2 RelativeVelocity (Body a, Body b, Contact c)
-			{ return (a.w * c.r1.Left + a.vel) - (b.w * c.r2.Left + b.vel); }
+			{ return (a.rot * c.r1.Left + a.vel) - (b.rot * c.r2.Left + b.vel); }
 		
 		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Contact c)
-			{ return (a.wBias * c.r1.Left + a.velBias) - (b.wBias * c.r2.Left + b.velBias); }
+			{ return (a.rotBias * c.r1.Left + a.velBias) - (b.rotBias * c.r2.Left + b.velBias); }
 		
 		internal static double KScalar (Body a, Body b, Vec2 r1, Vec2 r2, Vec2 n)
 		{

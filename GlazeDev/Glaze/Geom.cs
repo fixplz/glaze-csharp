@@ -9,15 +9,15 @@ namespace Glaze
 		#region PROPERTIES
 		// motion components
 		public Vec2   pos,   vel;
-		public double angle, w;
+		public double angle, rot;
 		
-		public  Vec2   velBias, forces;
-		internal double wBias,   torque;
+		internal Vec2   velBias;
+		internal double rotBias;
 		
 		public Vec2 gravity;
 		
 		// local transform
-		public Vec2 rot;
+		public Vec2 dir;
 		
 		// mass and inertia
 		public double massInv, inertiaInv;
@@ -42,8 +42,7 @@ namespace Glaze
 		public void CalcProperties ()
 		{
 			double mass = 0, inertia = 0;
-			foreach (Shape s in shapes)
-				{ mass += s.mass; inertia += s.mass*s.Inertia; }
+			foreach (Shape s in shapes) { mass += s.mass; inertia += s.mass*s.Inertia; }
 			massInv = 1.0/mass; inertiaInv = 1.0/inertia;
 		}
 		
@@ -60,21 +59,20 @@ namespace Glaze
 		internal void UpdateVelocity (double dt)
 		{
 			double damping = 1; // TODO damping
-			vel = damping * vel + dt * (massInv * forces + gravity);
-			w   = damping * w   + dt *  inertiaInv * torque;
+			vel = damping * vel + dt * gravity;
+			rot = damping * rot;
 		}
 		
 		internal void UpdatePosition (double dt)
 		{
-			pos += dt * (vel + velBias); angle += dt * (w + wBias); rot = Vec2.Polar (angle);
-			velBias.x = velBias.y = wBias = 0;
+			pos += dt * (vel + velBias); angle += dt * (rot + rotBias); dir = Vec2.Polar (angle);
+			velBias.x = velBias.y = rotBias = 0;
 		}
 		#endregion
 		
 		#region MOVEMENT
-		internal void ApplyImpulse     (Vec2 j, Vec2 r) { vel     += massInv * j; w     += inertiaInv * (r * j.Right); }
-		internal void ApplyBiasImpulse (Vec2 j, Vec2 r) { velBias += massInv * j; wBias += inertiaInv * (r * j.Right); }
-		internal void ApplyForce       (Vec2 f, Vec2 r) { forces  += f; torque += (r * f.Right); }
+		internal void ApplyImpulse     (Vec2 j, Vec2 r) { vel     += massInv * j; rot     += inertiaInv * (r * j.Right); }
+		internal void ApplyBiasImpulse (Vec2 j, Vec2 r) { velBias += massInv * j; rotBias += inertiaInv * (r * j.Right); }
 		#endregion
 	}
 	
@@ -88,8 +86,7 @@ namespace Glaze
 		public AABB       aabb;
 		public double     mass;
 		
-		public void CalcMass (double density)
-			{ mass = density * Area * Config.areaMassRatio; }
+		public void CalcMass (double density) { mass = density * Area * Config.areaMassRatio; }
 		
 		public abstract double Area    { get; }
 		public abstract double Inertia { get; }
@@ -115,7 +112,7 @@ namespace Glaze
 		public override double Inertia { get { return radius*radius/2 + offset.LengthSq; } }
 		
 		internal override void UpdateShape()
-			{ aabb.SetExtents (pos = body.pos + offset.Rotate (body.rot), new Vec2 {x=radius, y=radius}); }
+			{ aabb.SetExtents (pos = body.pos + offset.Rotate (body.dir), new Vec2 {x=radius, y=radius}); }
 		
 		public override bool ContainsPoint(Vec2 v) { return (v-pos).LengthSq < radius*radius; }
 		#endregion
@@ -188,13 +185,13 @@ namespace Glaze
 		{
 			AABB box = new AABB ();
 			
-			vertP [0] = body.pos + vertL [0].Rotate (body.rot);
+			vertP [0] = body.pos + vertL [0].Rotate (body.dir);
 			box.t = box.b = vertP [0].y;
 			box.l = box.r = vertP [0].x;
 			
 			for (int i=1; i<vertL.Length; i++)
 			{
-				vertP [i] = body.pos + vertL [i].Rotate (body.rot);
+				vertP [i] = body.pos + vertL [i].Rotate (body.dir);
 				box.t = Math.Min (box.t, vertP [i].y);
 				box.b = Math.Max (box.b, vertP [i].y);
 				box.l = Math.Min (box.l, vertP [i].x);
@@ -205,7 +202,7 @@ namespace Glaze
 			
 			for (int i=0; i<axisL.Length; i++)
 			{
-				axisP [i].n = axisL [i].n.Rotate (body.rot);
+				axisP [i].n = axisL [i].n.Rotate (body.dir);
 				axisP [i].d = axisP [i].n * body.pos + axisL [i].d;
 			}
 		}

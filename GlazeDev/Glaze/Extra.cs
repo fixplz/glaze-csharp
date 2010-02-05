@@ -55,7 +55,7 @@ namespace Glaze
 				{
 					if (s.shapeType == Shape.ShapeType.Circle)
 					{
-						Circle c = (Circle) s; Vec2 rot = c.radius * c.body.rot;
+						Circle c = (Circle) s; Vec2 rot = c.radius * c.body.dir;
 						g.DrawEllipse (p,  AsRectangle (c.aabb));
 						g.DrawLine    (p,  AsPoint (c.pos + 0.4*rot),  AsPoint (c.pos + rot));
 					}
