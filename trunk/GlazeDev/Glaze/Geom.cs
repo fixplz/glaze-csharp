@@ -6,7 +6,6 @@ namespace Glaze
 {
 	public class Body : Entry <Body>
 	{
-		#region PROPERTIES
 		// motion components
 		public Vec2   pos,   vel;
 		public double angle, rot;
@@ -27,7 +26,6 @@ namespace Glaze
 		public LinkedList<Arbiter>  arbiters;
 		
 		public uint group = 0;
-		#endregion
 		
 		#region DETAILS
 		public Body ()
@@ -58,7 +56,7 @@ namespace Glaze
 		
 		internal void UpdateVelocity (double dt)
 		{
-			double damping = 1; // TODO damping
+			double damping = 0.997; // TODO damping
 			vel = damping * vel + dt * gravity;
 			rot = damping * rot;
 		}
@@ -68,11 +66,9 @@ namespace Glaze
 			pos += dt * (vel + velBias); angle += dt * (rot + rotBias); dir = Vec2.Polar (angle);
 			velBias.x = velBias.y = rotBias = 0;
 		}
-		#endregion
 		
-		#region MOVEMENT
-		internal void ApplyImpulse     (Vec2 j, Vec2 r) { vel     += massInv * j; rot     += inertiaInv * (r * j.Right); }
-		internal void ApplyBiasImpulse (Vec2 j, Vec2 r) { velBias += massInv * j; rotBias += inertiaInv * (r * j.Right); }
+		public   void ApplyImpulse (Vec2 j, Vec2 r) { vel     += massInv*j; rot     -= inertiaInv*j.Cross (r); }
+		internal void ApplyBias    (Vec2 j, Vec2 r) { velBias += massInv*j; rotBias -= inertiaInv*j.Cross (r); }
 		#endregion
 	}
 	
@@ -91,9 +87,10 @@ namespace Glaze
 		public abstract double Area    { get; }
 		public abstract double Inertia { get; }
 		
-		internal abstract void UpdateShape ();
-		
 		public abstract bool ContainsPoint (Vec2 v);
+		public abstract void IntersectRay  (Ray r);
+		
+		internal abstract void UpdateShape ();
 		
 		public enum ShapeType { Circle, Polygon }
 	}
@@ -109,12 +106,24 @@ namespace Glaze
 		public Circle () { shapeType = ShapeType.Circle; }
 		
 		public override double Area    { get { return radius * radius * Math.PI; } }
-		public override double Inertia { get { return radius*radius/2 + offset.LengthSq; } }
+		public override double Inertia { get { return radius*radius/2 + offset.Sq; } }
 		
 		internal override void UpdateShape()
 			{ aabb.SetExtents (pos = body.pos + offset.Rotate (body.dir), new Vec2 {x=radius, y=radius}); }
 		
-		public override bool ContainsPoint(Vec2 v) { return (v-pos).LengthSq < radius*radius; }
+		public override bool ContainsPoint (Vec2 v) { return (v-pos).Sq < radius*radius; }
+		
+		public override void IntersectRay (Ray r)
+		{
+			var dist = r.origin - pos;
+			var b = dist*r.dir;
+			if (b>0) return;
+			
+			var d = radius*radius - (dist.Sq - b*b);
+			if (d<0) return; d = -b-Math.Sqrt (d);
+			
+			r.Report (this, d, (r.origin + d*r.dir - pos).Normalize (1));
+		}
 		#endregion
 	}
 	
@@ -207,8 +216,28 @@ namespace Glaze
 			}
 		}
 		
-		public override bool ContainsPoint(Vec2 v) 
-			{ foreach (Axis a in axisP) if (a.n*v > a.d) return false; return true; }
+		public override bool ContainsPoint(Vec2 v) { foreach (Axis a in axisP) if (a.n*v > a.d) return false; return true; }
+		
+		public override void IntersectRay(Ray r)
+		{
+			int len = vertP.Length, ix = -1;
+			double far = Double.PositiveInfinity, near = 0;
+			
+			for (int i=0; i<len; i++)
+			{
+				Vec2 v = vertP [i], n = axisP [i].n;
+				double dist = (v-r.origin)*n, slope = r.dir*n;
+				
+				if (slope == 0) continue;
+				double clip = dist/slope;
+				
+				if (slope < 0) { if (clip > far)  return; if (clip > near) { near = clip; ix = i; } }
+				else           { if (clip < near) return; if (clip < far)    far  = clip; }
+			}
+			
+			if (ix == -1) return; Axis a = axisP [ix];
+			r.Report (this, -(r.origin*a.n - a.d) / (r.dir*a.n), a.n);
+		}
 		#endregion
 	}
 	
@@ -228,12 +257,13 @@ namespace Glaze
 		public double Width  { get { return r-l; } }
 		public double Height { get { return b-t; } }
 		
-		public void SetExtents (Vec2 center, Vec2 extents) { SetRange (center-extents, center+extents); }
-		public void SetRange (Vec2 v, Vec2 u)              { t=v.y; b=u.y; l=v.x; r=u.x; }
+		public void SetExtents (Vec2 c, Vec2 ext) { SetRange (c-ext, c+ext); }
+		public void SetRange   (Vec2 v, Vec2 u)   { t=v.y; b=u.y; l=v.x; r=u.x; }
 		
-		public bool IntersectH (AABB x)                    { return x.l < r && l < x.r; }
-		public bool Intersect  (AABB x)                    { return IntersectH (x) && x.t < b && t < x.b; }
+		public bool IntersectH (AABB x)  { return x.l < r && l < x.r; }
+		public bool Intersect  (AABB x)  { return IntersectH (x) && x.t < b && t < x.b; }
 	}
+	
 	
 	
 	public struct Axis
@@ -243,6 +273,31 @@ namespace Glaze
 	}
 	
 	
+	public class Ray
+	{
+		public Vec2 origin,dir, normal;
+		public double dist, range;
+		public Shape shape;
+		
+		public Ray (Vec2 origin, Vec2 target, double range)
+		{
+			this.origin = origin;
+			this.range  = dist = range;
+			dir = (target-origin).Normalize (1);
+		}
+		
+		public void Reset () { dist = range; shape = null; normal.x = normal.y = 0; }
+		
+		public void Report (Shape s, double dist, Vec2 normal)
+		{
+			if (this.dist < dist) return;
+			
+			this.dist   = dist;
+			this.normal = normal;
+			this.shape  = s;
+		}
+	}
+	
 	
 	public struct Vec2
 	{
@@ -251,15 +306,13 @@ namespace Glaze
 		public Vec2 (double x, double y) { this.x=x; this.y=y; }
 		
 		public override string ToString() { return String.Format ("({0},{1})", x,y); }
-		
-		public void Clear () { x=0; y=0; }
 				
 		public Vec2 Right { get { return new Vec2 {x=y,  y=-x}; } }
 		public Vec2 Left  { get { return new Vec2 {x=-y, y=x }; } }
 		public Vec2 Unit  { get { return (1/Length) * this;     } }
 		
-		public double Length   { get { return Math.Sqrt (LengthSq); } }
-		public double LengthSq { get { return this * this;          } }
+		public double Length { get { return Math.Sqrt (Sq); } }
+		public double Sq     { get { return this * this;          } }
 		
 		public double Cross  (Vec2 b)  { return this * b.Right; }
 		public Vec2   Rotate (Vec2 b)  { return new Vec2 {x=x*b.x - y*b.y, y=y*b.x + x*b.y}; }
@@ -272,6 +325,7 @@ namespace Glaze
 		public static Vec2 operator - (Vec2 a, Vec2 b)   { return new Vec2 {x=a.x-b.x, y=a.y-b.y}; }
 		public static Vec2 operator * (double s, Vec2 v) { return new Vec2 {x=v.x*s,   y=v.y*s  }; }
 		public static Vec2 operator - (Vec2 a)           { return new Vec2 {x=-a.x,    y=-a.y   }; }
+		public static Vec2 operator * (Vec2 v, double s) { return s*v; }
 		
 		public static double operator * (Vec2 a, Vec2 b) { return a.x*b.x + a.y*b.y; }
 	}

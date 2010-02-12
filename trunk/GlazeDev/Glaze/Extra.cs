@@ -66,13 +66,24 @@ namespace Glaze
 						g.DrawLine  (p,   AsPoint (verts.First ()),   AsPoint (verts.Last ()));
 					}
 				}
-				catch (OverflowException) { }
+				catch (OverflowException) {}
 			}
 			
 			foreach (Arbiter arb in sp.arbiters)
 				foreach (Contact c in arb.Contacts ())
 					g.FillEllipse (Brushes.Green, (float)c.p.x-2, (float)c.p.y-2, 4,4);
 		}
+		
+		public static void DrawRays (IEnumerable<Ray> rays, Graphics g)
+		{
+			foreach (Ray r in rays)
+			{
+				if (r.shape == null) continue; var hit = r.origin+r.dist*r.dir;
+				g.DrawLine (new Pen (Color.Blue,  1), AsPoint (r.origin), AsPoint (hit));
+				g.DrawLine (new Pen (Color.Green, 2), AsPoint (hit), AsPoint (hit+20*r.normal));
+			}
+		}
+		
 		
 		public static PointF AsPoint (Vec2 v)
 			{ return new PointF ((float)v.x, (float)v.y); }

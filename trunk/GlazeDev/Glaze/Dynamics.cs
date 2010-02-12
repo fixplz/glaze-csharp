@@ -20,7 +20,7 @@ namespace Glaze
 		public IEnumerable<Contact> Contacts () { for (int i=0; i<used; i++) yield return contacts [i]; }
 		
 		#region INTERNALS
-		internal bool UpdateContact (Vec2 p, Vec2 n, double dist, uint id)
+		internal bool UpdateContact (Vec2 p, Axis a, uint id)
 		{
 			Contact c;
 			for (int i=0; i<used; i++) { c = contacts [i]; if (c.id == id) goto found; }
@@ -30,7 +30,7 @@ namespace Glaze
 			c = contacts [used] ?? (contacts [used] = Contact.Assign ()); used++;
 			c.id = id; c.jnAcc = 0; c.jtAcc = 0;
 		found:
-			c.p = p; c.n = n; c.dist = dist; c.updated = true;
+			c.p = p; c.n = a.n; c.dist = a.d; c.updated = true;
 			return true;
 		}
 		
@@ -39,8 +39,7 @@ namespace Glaze
 			base.Remove ();
 			sa.body.arbiters.Remove (this);
 			sb.body.arbiters.Remove (this);
-			for (int i=0; i < contacts.Length && contacts [i] != null; i++)
-				Contact.Retire (contacts [i]);
+			for (int i=0; i < contacts.Length && contacts [i] != null; i++) Contact.Retire (contacts [i]);
 		}
 		
 		internal void Prestep (double dt)
@@ -72,7 +71,7 @@ namespace Glaze
 		public Vec2 p, n;
 		public double dist, jnAcc,jtAcc;
 		
-		internal Vec2 r1, r2;
+		internal Vec2 r1,r2;
 		internal double nMass,tMass, bounce, jBias,bias;
 		internal uint id; internal bool updated;
 		
@@ -80,15 +79,16 @@ namespace Glaze
 		internal void Prestep (double dt, Arbiter arb)
 		{
 			Body a = arb.sa.body, b = arb.sb.body;
+			
 			r1 = p - a.pos; r2 = p - b.pos;
 			
-			nMass = 1.0 / Calc.KScalar (a,b, r1,r2, n);
-			tMass = 1.0 / Calc.KScalar (a,b, r1,r2, n.Left);
+			nMass = 1.0 / Calc.KScalar (a,b, this, n);
+			tMass = 1.0 / Calc.KScalar (a,b, this, n.Left);
 			
 			jBias = 0; bias = 1.0/dt * Calc.BiasDist (dist);
 			bounce = arb.e * n * Calc.RelativeVelocity (a,b, this);
 			
-			Calc.NormalImpulse (jnAcc,jtAcc, a,b, this);
+			Calc.NormalImpulse (jnAcc,jtAcc, this, a,b);
 		}
 		
 		internal void Perform (Arbiter arb)
@@ -107,8 +107,8 @@ namespace Glaze
 			Calc.AddPositive (ref jnAcc, ref jn);
 			Calc.AddClamp    (ref jtAcc, ref jt, arb.u * jnAcc);
 			
-			Calc.NormalBiasImpulse (jbn,   a,b, this);
-			Calc.NormalImpulse     (jn,jt, a,b, this);
+			Calc.NormalBias    (jbn,   this, a,b);
+			Calc.NormalImpulse (jn,jt, this, a,b);
 		}
 		#endregion
 	}
@@ -118,44 +118,33 @@ namespace Glaze
 	internal static class Calc
 	{
 		#region AUX
-		internal static double BiasDist (double dist)
-			{ return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
+		internal static double BiasDist (double dist) { return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
 		
-		internal static void NormalImpulse (double jn, double jt, Body a, Body b, Contact c)
-			{ Vec2 v = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-v, c.r1); b.ApplyImpulse (v, c.r2); }
+		internal static void NormalBias    (double jbn,           Contact c, Body a, Body b) { Vec2 j = jbn*c.n;                       a.ApplyBias    (-j, c.r1);  b.ApplyBias    (j, c.r2); }
+		internal static void NormalImpulse (double jn, double jt, Contact c, Body a, Body b) { Vec2 j = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
 		
-		internal static void NormalBiasImpulse (double jbn, Body a, Body b, Contact c)
-			{ a.ApplyBiasImpulse (-jbn*c.n, c.r1); b.ApplyBiasImpulse (jbn*c.n, c.r2); }
+		internal static void AddPositive (ref double old, ref double change) { change = Math.Max (-old, change); old += change; }
+		internal static void AddClamp    (ref double old, ref double change, double limit)
+			{ double result = Math.Max (-limit, Math.Min (limit, old+change)); change = result-old; old = result; }
 		
-		internal static void AddPositive (ref double old, ref double change)
-			{ change = Math.Max (-old, change); old += change; }
+		internal static Vec2 RelativeVelocity     (Body a, Body b, Contact c) { return (a.rot     * c.r1.Left + a.vel)     - (b.rot     * c.r2.Left + b.vel); }
+		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Contact c) { return (a.rotBias * c.r1.Left + a.velBias) - (b.rotBias * c.r2.Left + b.velBias); }
 		
-		internal static void AddClamp (ref double old, ref double change, double limit)
-		{
-			double result = Math.Max (-limit, Math.Min (limit, old+change));
-			change = result-old; old = result;
-		}
+		internal static double KScalar (Body a, Body b, Contact c, Vec2 n)
+			{ double r1xn = c.r1.Cross (n), r2xn = c.r2.Cross (n); return a.massInv+b.massInv + a.inertiaInv*r1xn*r1xn + b.inertiaInv*r2xn*r2xn; }
 		
-		internal static Vec2 RelativeVelocity (Body a, Body b, Contact c)
-			{ return (a.rot * c.r1.Left + a.vel) - (b.rot * c.r2.Left + b.vel); }
-		
-		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Contact c)
-			{ return (a.rotBias * c.r1.Left + a.velBias) - (b.rotBias * c.r2.Left + b.velBias); }
-		
-		internal static double KScalar (Body a, Body b, Vec2 r1, Vec2 r2, Vec2 n)
-		{
-			double r1xn = r1.Cross (n), r2xn = r2.Cross (n);
-			return a.massInv+b.massInv + a.inertiaInv*r1xn*r1xn + b.inertiaInv*r2xn*r2xn;
-		}
+		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n) { foreach (Axis a in sa.axisP) if (a.n*n <= 0 && a.n*v > a.d) return false; return true; }
+		internal static bool ContainsVert (Polygon sa, Vec2 v)         { foreach (Axis a in sa.axisP) if (a.n*v > a.d)               return false; return true; }
 		#endregion
+		
 		
 		#region COLLISIONS
 		internal static bool Check (Shape sa, Shape sb, ref Arbiter arb)
 		{
 			switch ((int)((int)sa.shapeType*5 + sb.shapeType))
 			{
-				case 0: return Circle2Circle ((Circle) sa,  (Circle) sb,  ref arb);
-				case 1: return Circle2Poly   ((Circle) sa,  (Polygon) sb, ref arb);
+				case 0: return Circle2Circle ((Circle)  sa, (Circle)  sb,  ref arb);
+				case 1: return Circle2Poly   ((Circle)  sa, (Polygon) sb, ref arb);
 				case 6: return Poly2Poly     ((Polygon) sa, (Polygon) sb, ref arb);
 			}
 			
@@ -167,11 +156,11 @@ namespace Glaze
 		
 		internal static bool CircleContact (Vec2 c1, Vec2 c2, double r1, double r2, ref Arbiter arb)
 		{
-			Vec2 d = c2 - c1; double min = r1 + r2, dist = d.LengthSq, distInv;
+			Vec2 r = c2 - c1; double min = r1 + r2, dist = r.Sq, distInv;
 			if (dist >= min*min) return false; dist = Math.Sqrt (dist); distInv = 1.0/dist;
 			
 			if (arb == null) arb = new Arbiter (1);
-			arb.UpdateContact (c1 + (0.5 + distInv * (r1 - min/2)) * d, distInv*d, dist - min, 0);
+			arb.UpdateContact (c1 + (0.5 + distInv * (r1 - min/2)) * r, new Axis {n=distInv*r, d=dist - min}, 0);
 			return true;
 		}
 		
@@ -194,7 +183,7 @@ namespace Glaze
 			if (d < a.n.Cross (u)) return CircleContact (circle.pos, u, circle.radius, 0, ref arb);
 			
 			if (arb == null) arb = new Arbiter (1);
-			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, -a.n, max, 0);
+			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, new Axis {n=-a.n, d=max}, 0);
 			return true;
 		}
 		
@@ -229,26 +218,12 @@ namespace Glaze
 		{
 			uint id = sa.id << 8;
 			foreach (Vec2 v in sa.vertP)
-			{
-				if (ContainsVert (sb,v))
-					if (!arb.UpdateContact (v, a.n, a.d, id)) return;
-				id++;
-			}
+				{ if (ContainsVert (sb,v)) if (!arb.UpdateContact (v, a, id)) return; id++; }
 			
 			id = sb.id << 8;
-			foreach (Vec2 v in sb.vertP)
-			{
-				if (ContainsVert (sa,v,-a.n))
-					if (!arb.UpdateContact (v, a.n, a.d, id)) return;
-				id++;
-			}
+			foreach (Vec2 v in sb.vertP) 
+				{ if (ContainsVert (sa,v,-a.n)) if (!arb.UpdateContact (v, a, id)) return; id++; }
 		}
-		
-		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n)
-			{ foreach (Axis a in sa.axisP) if (a.n*n <= 0 && a.n*v > a.d) return false; return true; }
-		
-		internal static bool ContainsVert (Polygon sa, Vec2 v)
-			{ foreach (Axis a in sa.axisP) if (a.n*v > a.d) return false; return true; }
 		#endregion
 	}
 }
