@@ -8,7 +8,7 @@ namespace Glaze
 	{
 		public const double
 			areaMassRatio  = 0.01,
-			resolveSlop    = 0.3,
+			resolveSlop    = 0.1,
 			resolveBias    = 0.1;
 		
 		public static Material defaultMaterial =
