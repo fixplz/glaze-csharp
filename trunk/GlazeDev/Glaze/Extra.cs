@@ -57,7 +57,7 @@ namespace Glaze
 					{
 						Circle c = (Circle) s; Vec2 rot = c.radius * c.body.dir;
 						g.DrawEllipse (p,  AsRectangle (c.aabb));
-						g.DrawLine    (p,  AsPoint (c.pos + 0.4*rot),  AsPoint (c.pos + rot));
+						g.DrawLine    (p,  AsPoint (c.center + 0.4*rot),  AsPoint (c.center + rot));
 					}
 					else if (s.shapeType == Shape.ShapeType.Polygon)
 					{
@@ -69,18 +69,30 @@ namespace Glaze
 				catch (OverflowException) {}
 			}
 			
+			foreach (Joint j in sp.joints)
+			{
+				Pen p = new Pen (Color.Brown, 2);
+				
+				try
+				{
+					DistanceJoint dj = j as DistanceJoint;
+					g.DrawLine (p, AsPoint (dj.a.pos+dj.a1), AsPoint (dj.b.pos+dj.a2));
+				}
+				catch (OverflowException) {}
+			}
+			
 			foreach (Arbiter arb in sp.arbiters)
 				foreach (Contact c in arb.Contacts ())
-					g.FillEllipse (Brushes.Green, (float)c.p.x-2, (float)c.p.y-2, 4,4);
+					g.FillEllipse (Brushes.Green, (float)c.p.x-3, (float)c.p.y-3, 6,6);
 		}
 		
 		public static void DrawRays (IEnumerable<Ray> rays, Graphics g)
 		{
 			foreach (Ray r in rays)
 			{
-				if (r.shape == null) continue; var hit = r.origin+r.dist*r.dir;
+				var hit = r.origin+r.dist*r.dir;
 				g.DrawLine (new Pen (Color.Blue,  1), AsPoint (r.origin), AsPoint (hit));
-				g.DrawLine (new Pen (Color.Green, 2), AsPoint (hit), AsPoint (hit+20*r.normal));
+				g.DrawLine (new Pen (Color.Green, 1), AsPoint (hit), AsPoint (hit+20*r.normal));
 			}
 		}
 		

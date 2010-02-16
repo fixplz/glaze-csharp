@@ -61,18 +61,17 @@ namespace Glaze
 	
 	
 	
-	public sealed class Contact
+	public sealed class Contact : Connection
 	{
 		internal static Stack<Contact> pool = new Stack<Contact> (100);
 		internal static Contact Assign () { return pool.Count != 0 ? pool.Pop () : new Contact (); }
 		internal static void Retire (Contact c) { pool.Push (c); }
 		
 		// position, normal, penetration, normal and tangent impulses
-		public Vec2 p, n;
+		public Vec2 p;
 		public double dist, jnAcc,jtAcc;
 		
-		internal Vec2 r1,r2;
-		internal double nMass,tMass, bounce, jBias,bias;
+		internal double nMass,tMass, bounce, bias,jBias;
 		internal uint id; internal bool updated;
 		
 		#region RESOLUTION MATH
@@ -115,26 +114,98 @@ namespace Glaze
 	
 	
 	
+	public abstract class Joint : Connection
+	{
+		public   Body a,b;
+		internal Vec2 a1,a2;
+		
+		internal Joint (Body a, Body b, Vec2 a1, Vec2 a2)
+		{
+			this.a  = a;  this.b  = b;
+			this.a1 = (a1-a.pos); this.a2 = (a2-b.pos);
+		}
+		
+		internal abstract void Prestep (double dtInv);
+		internal abstract void Perform ();
+		
+		internal LinkedListNode<Joint> node;
+		internal void Attach (LinkedList<Joint> list) { node = list.AddFirst (this); }
+		internal void Remove () { node.List.Remove (node); }
+	}
+	
+	
+	public class DistanceJoint : Joint
+	{
+		public   double adist, jnAcc;
+		internal double nMass, bias,jBias;
+		
+		public DistanceJoint (Body a, Body b, Vec2 anchor1, Vec2 anchor2)
+			: base (a,b,anchor1,anchor2)
+		{
+			adist = (anchor1-anchor2).Length;
+		}
+		
+		internal override void Prestep (double dtInv)
+		{
+			r1 = a1.Rotate (a.dir); r2 = a2.Rotate (b.dir);
+			
+			Vec2 d = (b.pos+r2) - (a.pos+r1);
+			double dist = d.Length;
+			
+			n = dist == 0 ? new Vec2 () : 1/dist * d;
+			nMass = 1.0 / Calc.KScalar (a,b, this, n);
+			
+			bias = dtInv * Config.resolveBias * (dist - adist);
+			jBias = 0;
+			
+			Calc.NormalImpulse (jnAcc,0, this, a,b);
+		}
+		
+		internal override void Perform()
+		{
+			Vec2 vb,vr; double jbn, jn;
+			
+			vb = Calc.RelativeBiasVelocity (a,b, this);
+			vr = Calc.RelativeVelocity     (a,b, this);
+			
+			         jbn = nMass * (vb * n - bias);
+			jnAcc += jn  = nMass * (vr * n);
+			
+			Calc.NormalBias    (jbn,  this, a,b);
+			Calc.NormalImpulse (jn,0, this, a,b);
+		}
+	}
+	
+	
+	
+	public class Connection
+	{
+		public Vec2 r1,r2, n;
+	}
+	
+	
+	
 	internal static class Calc
 	{
 		#region AUX
 		internal static double BiasDist (double dist) { return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
 		
-		internal static void NormalBias    (double jbn,           Contact c, Body a, Body b) { Vec2 j = jbn*c.n;                       a.ApplyBias    (-j, c.r1);  b.ApplyBias    (j, c.r2); }
-		internal static void NormalImpulse (double jn, double jt, Contact c, Body a, Body b) { Vec2 j = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
+		internal static void NormalBias    (double jbn,           Connection c, Body a, Body b) { Vec2 j = jbn*c.n;                       a.ApplyBias    (-j, c.r1);  b.ApplyBias    (j, c.r2); }
+		internal static void NormalImpulse (double jn, double jt, Connection c, Body a, Body b) { Vec2 j = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
 		
 		internal static void AddPositive (ref double old, ref double change) { change = Math.Max (-old, change); old += change; }
 		internal static void AddClamp    (ref double old, ref double change, double limit)
 			{ double result = Math.Max (-limit, Math.Min (limit, old+change)); change = result-old; old = result; }
 		
-		internal static Vec2 RelativeVelocity     (Body a, Body b, Contact c) { return (a.rot     * c.r1.Left + a.vel)     - (b.rot     * c.r2.Left + b.vel); }
-		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Contact c) { return (a.rotBias * c.r1.Left + a.velBias) - (b.rotBias * c.r2.Left + b.velBias); }
+		internal static Vec2 RelativeVelocity     (Body a, Body b, Connection c) { return (a.rot     * c.r1.Left + a.vel)     - (b.rot     * c.r2.Left + b.vel); }
+		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Connection c) { return (a.rotBias * c.r1.Left + a.velBias) - (b.rotBias * c.r2.Left + b.velBias); }
 		
-		internal static double KScalar (Body a, Body b, Contact c, Vec2 n)
-			{ double r1xn = c.r1.Cross (n), r2xn = c.r2.Cross (n); return a.massInv+b.massInv + a.inertiaInv*r1xn*r1xn + b.inertiaInv*r2xn*r2xn; }
+		internal static double KScalar (Body a, Body b, Connection c, Vec2 n) { return a.massInv+b.massInv + a.inertiaInv * c.r1.Cross (n).Sq () + b.inertiaInv * c.r2.Cross (n).Sq (); }
 		
 		internal static bool ContainsVert (Polygon sa, Vec2 v, Vec2 n) { foreach (Axis a in sa.axisP) if (a.n*n <= 0 && a.n*v > a.d) return false; return true; }
 		internal static bool ContainsVert (Polygon sa, Vec2 v)         { foreach (Axis a in sa.axisP) if (a.n*v > a.d)               return false; return true; }
+		
+		internal static double Sq (this double x) { return x*x; }
 		#endregion
 		
 		
@@ -152,7 +223,7 @@ namespace Glaze
 		}
 		
 		internal static bool Circle2Circle (Circle sa, Circle sb, ref Arbiter arb)
-			{ return CircleContact (sa.pos, sb.pos, sa.radius, sb.radius, ref arb); }
+			{ return CircleContact (sa.center, sb.center, sa.radius, sb.radius, ref arb); }
 		
 		internal static bool CircleContact (Vec2 c1, Vec2 c2, double r1, double r2, ref Arbiter arb)
 		{
@@ -171,19 +242,19 @@ namespace Glaze
 			
 			for (int i=0; i<len; i++)
 			{
-				double dist = poly.axisP [i].n * circle.pos - poly.axisP [i].d - circle.radius;
+				double dist = poly.axisP [i].n * circle.center - poly.axisP [i].d - circle.radius;
 				if (dist > 0) return false; if (dist > max) { max = dist; ix = i; }
 			}
 			
 			Vec2 v = poly.vertP [ix], u = poly.vertP [(ix+1)%len]; Axis a = poly.axisP [ix];
 			
-			double d = a.n.Cross (circle.pos);
+			double d = a.n.Cross (circle.center);
 			
-			if (d > a.n.Cross (v)) return CircleContact (circle.pos, v, circle.radius, 0, ref arb);
-			if (d < a.n.Cross (u)) return CircleContact (circle.pos, u, circle.radius, 0, ref arb);
+			if (d > a.n.Cross (v)) return CircleContact (circle.center, v, circle.radius, 0, ref arb);
+			if (d < a.n.Cross (u)) return CircleContact (circle.center, u, circle.radius, 0, ref arb);
 			
 			if (arb == null) arb = new Arbiter (1);
-			arb.UpdateContact (circle.pos - (circle.radius+max/2) * a.n, new Axis {n=-a.n, d=max}, 0);
+			arb.UpdateContact (circle.center - (circle.radius+max/2) * a.n, new Axis {n=-a.n, d=max}, 0);
 			return true;
 		}
 		

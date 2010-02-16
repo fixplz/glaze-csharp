@@ -22,6 +22,7 @@ namespace Glaze
 		public LinkedList<Body>    bodies;
 		public LinkedList<Shape>   shapes;
 		public LinkedList<Arbiter> arbiters;
+		public LinkedList<Joint>   joints;
 		
 		public int iterations = 5;
 		
@@ -30,8 +31,9 @@ namespace Glaze
 		internal Space ()
 		{
 			bodies   = new LinkedList<Body>     ();
-			arbiters = new LinkedList<Arbiter>  ();
 			shapes   = new LinkedList<Shape>    ();
+			arbiters = new LinkedList<Arbiter>  ();
+			joints   = new LinkedList<Joint>    ();
 		}
 		
 		#region CONTROLS
@@ -43,9 +45,13 @@ namespace Glaze
 		
 		public void RemoveBody (Body body)
 		{
-			foreach (Shape s in body.shapes) s.Remove ();
+			foreach (Shape s     in body.shapes)   s.Remove ();
+			foreach (Arbiter arb in body.arbiters) arb.Remove ();
 			body.Remove ();
 		}
+		
+		public void AddJoint    (Joint joint) { joint.Attach (joints); }
+		public void RemoveJoint (Joint joint) { joint.Remove (); }
 		
 		public virtual IEnumerable<Shape> Query (AABB area)
 		{
@@ -70,10 +76,14 @@ namespace Glaze
 				if (stamp - arb.stamp > 3) arb.Remove (); else arb.Prestep (dt);
 			}
 			
+			foreach (Joint j in joints) j.Prestep (1.0/dt);
+			
 			// generally 70% of time spent here
 			for (int i=0; i<iterations; i++)
-				foreach (Arbiter arb in arbiters)
-					arb.Perform ();
+			{
+				foreach (Arbiter arb in arbiters) arb.Perform ();
+				foreach (Joint j     in joints)   j.Perform ();
+			}
 			
 			foreach (Body b in bodies) b.UpdatePosition (dt);
 			
@@ -118,6 +128,7 @@ namespace Glaze
 	
 	
 	
+	// mixin
 	public class Entry<T> where T : Entry<T>
 	{
 		internal LinkedListNode<T> node;

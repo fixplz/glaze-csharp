@@ -56,7 +56,7 @@ namespace Glaze
 		
 		internal void UpdateVelocity (double dt)
 		{
-			double damping = 0.997; // TODO damping
+			double damping = 0.999; // TODO damping
 			vel = damping * vel + dt * gravity;
 			rot = damping * rot;
 		}
@@ -88,7 +88,7 @@ namespace Glaze
 		public abstract double Inertia { get; }
 		
 		public abstract bool ContainsPoint (Vec2 v);
-		public abstract void IntersectRay  (Ray r);
+		public abstract void IntersectRay  (Ray ray);
 		
 		internal abstract void UpdateShape ();
 		
@@ -100,7 +100,7 @@ namespace Glaze
 	public sealed class Circle : Shape
 	{
 		public double  radius;
-		public Vec2    offset, pos;
+		public Vec2    offset, center;
 		
 		#region DETAILS
 		public Circle () { shapeType = ShapeType.Circle; }
@@ -109,20 +109,18 @@ namespace Glaze
 		public override double Inertia { get { return radius*radius/2 + offset.Sq; } }
 		
 		internal override void UpdateShape()
-			{ aabb.SetExtents (pos = body.pos + offset.Rotate (body.dir), new Vec2 {x=radius, y=radius}); }
+			{ aabb.SetExtents (center = body.pos + offset.Rotate (body.dir), new Vec2 {x=radius, y=radius}); }
 		
-		public override bool ContainsPoint (Vec2 v) { return (v-pos).Sq < radius*radius; }
+		public override bool ContainsPoint (Vec2 v) { return (v-center).Sq < radius*radius; }
 		
-		public override void IntersectRay (Ray r)
+		public override void IntersectRay (Ray ray)
 		{
-			var dist = r.origin - pos;
-			var b = dist*r.dir;
-			if (b>0) return;
+			Vec2 r = center - ray.origin;
+			double slope = r*ray.dir;                          if (slope < 0) return;
+			double D     = radius*radius + slope*slope - r*r;  if (D     < 0) return;
+			double dist  = slope - Math.Sqrt (D);              if (dist  < 0) return;
 			
-			var d = radius*radius - (dist.Sq - b*b);
-			if (d<0) return; d = -b-Math.Sqrt (d);
-			
-			r.Report (this, d, (r.origin + d*r.dir - pos).Normalize (1));
+			ray.Report (this, dist, (-r + dist*ray.dir).Normalize (1));
 		}
 		#endregion
 	}
@@ -221,22 +219,20 @@ namespace Glaze
 		public override void IntersectRay(Ray r)
 		{
 			int len = vertP.Length, ix = -1;
-			double far = Double.PositiveInfinity, near = 0;
+			double inner = Double.PositiveInfinity, outer = 0;
 			
 			for (int i=0; i<len; i++)
 			{
-				Vec2 v = vertP [i], n = axisP [i].n;
-				double dist = (v-r.origin)*n, slope = r.dir*n;
+				Axis a = axisP [i];
 				
-				if (slope == 0) continue;
-				double clip = dist/slope;
+				double proj = a.n*r.origin - a.d, slope = -a.n*r.dir; if (slope == 0) continue;
+				double dist = proj/slope;
 				
-				if (slope < 0) { if (clip > far)  return; if (clip > near) { near = clip; ix = i; } }
-				else           { if (clip < near) return; if (clip < far)    far  = clip; }
+				if (slope > 0) { if (dist > inner) return; if (dist > outer) { outer = dist; ix = i; } }
+				else           { if (dist < outer) return; if (dist < inner)   inner = dist;           }
 			}
 			
-			if (ix == -1) return; Axis a = axisP [ix];
-			r.Report (this, -(r.origin*a.n - a.d) / (r.dir*a.n), a.n);
+			if (ix == -1) return; r.Report (this, outer, axisP [ix].n);
 		}
 		#endregion
 	}

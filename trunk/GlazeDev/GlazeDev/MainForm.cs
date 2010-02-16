@@ -24,10 +24,10 @@ namespace GlazeDev
 			space = new SortedSpace (); space.iterations = 10;
 			gravity = new Vec2 (0,400);
 			
-			int rnum = 20, spacing = 50;
+			int rnum = 40, spacing = 20;
 			rays = new Ray [rnum];
 			for (var i=0; i<rnum; i++)
-				rays [i] = new Ray (new Vec2 (500+i*spacing-rnum*spacing/2,250), new Vec2 (500,1000), 1000);
+				rays [i] = new Ray (new Vec2 (500+i*spacing-rnum*spacing/2,50), new Vec2 (500,1000), 1000);
 			
 			var ground = new Body { pos=new Vec2 (300,500) };
 			ground.AddShape (Tools.BoxShape (0,0,         0,  1000,100));
@@ -36,7 +36,7 @@ namespace GlazeDev
 			ground.massInv = 0; ground.inertiaInv = 0;
 			space.AddBody (ground);
 			
-			Test3 ();
+			Test4 ();
 			
 			var t       = new Timer ();
 			t.Interval  = 1000/30;
@@ -53,9 +53,9 @@ namespace GlazeDev
 					space.RunPhysics (0.05/ticks);
 				}
 				
-				foreach (Ray r in rays) r.Reset ();
+				/*foreach (Ray r in rays) r.Reset ();
 				foreach (Shape s in space.Query (new AABB {l=0,t=0,r=1200,b=1000}))
-					foreach (Ray r in rays) s.IntersectRay (r);
+					foreach (Ray r in rays) s.IntersectRay (r);*/
 				
 				Invalidate ();
 			};
@@ -81,7 +81,7 @@ namespace GlazeDev
 			e.Graphics.Clear (Color.White);
 			e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
 			Tools.DrawWorld (space, e.Graphics);
-			Tools.DrawRays  (rays,  e.Graphics);
+			//Tools.DrawRays  (rays,  e.Graphics);
 		}
 		
 		public void Test1 ()
@@ -126,14 +126,21 @@ namespace GlazeDev
 			b2.gravity = gravity; space.AddBody (b2);
 		}
 		
-		// this test demonstrates an inherent bad behavior with long rectangles - maybe I can fix this
 		public void Test4 ()
 		{
-			for (int r=0; r<20; r++)
+			var r = 15;
+			
+			var last = Tools.CircleBody (20,100, r);
+			last.gravity = gravity;
+			space.AddBody (last);
+			
+			for (int i=1; i<50; i++)
 			{
-				var b = Tools.BoxBody (300, 443 - r * 15, 0, 400,15);
-				b.gravity = gravity; b.inertiaInv *= 0.5;
-				space.AddBody (b);
+				var c = Tools.CircleBody (20+i*2*r,100, r);
+				c.gravity = gravity;
+				space.AddBody (c);
+				space.AddJoint (new DistanceJoint (last,c, last.pos, c.pos));
+				last = c;
 			}
 		}
 		
