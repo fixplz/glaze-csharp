@@ -76,14 +76,14 @@ namespace Glaze
 				try
 				{
 					DistanceJoint dj = j as DistanceJoint;
-					g.DrawLine (p, AsPoint (dj.a.pos+dj.a1), AsPoint (dj.b.pos+dj.a2));
+					g.DrawLine (p, AsPoint (dj.a.pos+dj.con.r1), AsPoint (dj.b.pos+dj.con.r2));
 				}
 				catch (OverflowException) {}
 			}
 			
-			foreach (Arbiter arb in sp.arbiters)
+			/*foreach (Arbiter arb in sp.arbiters)
 				foreach (Contact c in arb.Contacts ())
-					g.FillEllipse (Brushes.Green, (float)c.p.x-3, (float)c.p.y-3, 6,6);
+					g.FillEllipse (Brushes.Green, (float)c.p.x-3, (float)c.p.y-3, 6,6);*/
 		}
 		
 		public static void DrawRays (IEnumerable<Ray> rays, Graphics g)

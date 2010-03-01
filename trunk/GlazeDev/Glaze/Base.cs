@@ -9,12 +9,20 @@ namespace Glaze
 		public const double
 			areaMassRatio  = 0.01,
 			resolveSlop    = 0.1,
-			resolveBias    = 0.1;
-		
-		public static Material defaultMaterial =
-			new Material {restitution=0.2, friction=0.9};
+			resolveRate    = 0.1,
+			
+			defaultRestitution = 0.0,
+			defaultFriction    = 0.5;
 	}
 	
+	
+	
+	public class Entry<T> where T : Entry<T>
+	{
+		internal LinkedListNode<T> node;
+		internal virtual void Attach (LinkedList<T> list) { node = list.AddFirst (this as T); }
+		internal virtual void Remove () { node.List.Remove (node); }
+	}
 	
 	
 	public abstract class Space
@@ -23,8 +31,6 @@ namespace Glaze
 		public LinkedList<Shape>   shapes;
 		public LinkedList<Arbiter> arbiters;
 		public LinkedList<Joint>   joints;
-		
-		public int iterations = 5;
 		
 		internal uint stamp = 0;
 		
@@ -60,7 +66,7 @@ namespace Glaze
 					yield return s;
 		}
 		
-		public void RunPhysics (double dt)
+		public void RunPhysics (double dt, int iterations)
 		{
 			foreach (Body b in bodies)
 			{
@@ -73,10 +79,10 @@ namespace Glaze
 			for (var n = arbiters.First; n != null;)
 			{
 				Arbiter arb = n.Value; n = n.Next;
-				if (stamp - arb.stamp > 3) arb.Remove (); else arb.Prestep (dt);
+				if (stamp - arb.stamp > 3) arb.Remove (); else arb.Prestep ();
 			}
 			
-			foreach (Joint j in joints) j.Prestep (1.0/dt);
+			foreach (Joint j in joints) j.Prestep ();
 			
 			// generally 70% of time spent here
 			for (int i=0; i<iterations; i++)
@@ -96,43 +102,85 @@ namespace Glaze
 		
 		protected void NarrowPhase (Shape sa, Shape sb)
 		{
-			if (sa.shapeType > sb.shapeType) { var t=sa; sa=sb; sb=t; }
-			
 			Body a = sa.body, b = sb.body;
-			if (a == b || (a.group != 0 && a.group == b.group)) return;
+			if (a == b || (a.group != b.group && (a.group&b.group) != 0)) return;
 			
 			Arbiter arb = null;
 			foreach (Arbiter x in a.arbiters) if (x.Belong (sa,sb)) { arb = x; break; }
 			
 			bool first = arb == null;
 			
-			if (!first)
-				if (arb.stamp == stamp) return;
-				else { arb.sa = sa; arb.sb = sb; }
+			if (sa.shapeType > sb.shapeType) { var t=sa; sa=sb; sb=t; }
 			
-			if (Calc.Check (sa, sb, ref arb))
+			if (Calc.Check (sa, sb, ref arb)) // assigns data to arb if successful
 			{
-				if (first)
-				{
-					if (arb.sa == null) { arb.sa = sa; arb.sb = sb;}
-					a.arbiters.AddFirst (arb);
-					b.arbiters.AddFirst (arb);
-					arb.Attach (arbiters);
-				}
-				
+				if (first) { if (arb.sa == null) { arb.sa = sa; arb.sb = sb; } arb.Attach (arbiters); }
 				arb.stamp = stamp;
 			}
 		}
 		#endregion
 	}
 	
-	
-	
-	// mixin
-	public class Entry<T> where T : Entry<T>
+	public sealed class Arbiter : Entry <Arbiter>
 	{
-		internal LinkedListNode<T> node;
-		internal virtual void Attach (LinkedList<T> list) { node = list.AddFirst (this as T); }
-		internal virtual void Remove () { node.List.Remove (node); }
+		public Shape sa,sb;
+		public double stick, bounce;
+		
+		internal uint stamp;
+		internal int used = 0;
+		internal Contact[] contacts;
+		
+		internal Arbiter (uint n) { contacts = new Contact [n]; }
+		
+		public bool Belong   (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
+		public Body GetOther (Body b)           { return sa.body == b ? sb.body : sa.body; }
+		
+		public IEnumerable<Contact> Contacts { get { for (int i=0; i<used; i++) yield return contacts [i]; } }
+		
+		internal override void Attach(LinkedList<Arbiter> list)
+		{
+			base.Attach (list);
+			sa.body.arbiters.AddFirst (this);
+			sb.body.arbiters.AddFirst (this);
+		}
+		
+		internal override void Remove ()
+		{
+			base.Remove ();
+			sa.body.arbiters.Remove (this);
+			sb.body.arbiters.Remove (this);
+			for (int i=0; i < contacts.Length && contacts [i] != null; i++) Contact.Retire (contacts [i]);
+		}
+		
+		#region STEP
+		internal bool UpdateContact (Vec2 p, Axis a, uint id)
+		{
+			Contact c;
+			for (int i=0; i<used; i++) { c = contacts [i]; if (c.id == id) goto found; }
+			
+			if (used == contacts.Length) return false;
+			
+			c = contacts [used] ?? (contacts [used] = Contact.Assign ()); used++;
+			c.id = id; c.jnAcc = 0; c.jtAcc = 0;
+		found:
+			c.p = p; c.con.n = a.n; c.dist = a.d; c.updated = true;
+			return true;
+		}
+		
+		internal void Prestep ()
+		{
+			stick = sa.restitution * sb.restitution;
+			bounce = sa.friction    * sb.friction;
+			
+			for (int i = used-1; i>=0; i--)
+			{
+				Contact c = contacts [i];
+				if (!c.updated) { if (i < --used) { contacts [i] = contacts [used]; contacts [used] = c; } }
+				else            { c.updated = false; c.Prestep (this); }
+			}
+		}
+		
+		internal void Perform () { for (int i=0; i<used; i++) contacts [i].Perform (this); }
+		#endregion
 	}
 }

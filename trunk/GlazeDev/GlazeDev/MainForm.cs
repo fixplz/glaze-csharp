@@ -21,7 +21,7 @@ namespace GlazeDev
 			
 			DoubleBuffered = true;
 			
-			space = new SortedSpace (); space.iterations = 10;
+			space = new SortedSpace ();
 			gravity = new Vec2 (0,400);
 			
 			int rnum = 40, spacing = 20;
@@ -33,25 +33,26 @@ namespace GlazeDev
 			ground.AddShape (Tools.BoxShape (0,0,         0,  1000,100));
 			ground.AddShape (Tools.BoxShape (-550,-150, -0.4, 100,400));
 			ground.AddShape (Tools.BoxShape ( 550,-150,  0.4, 100,400));
-			ground.massInv = 0; ground.inertiaInv = 0;
 			space.AddBody (ground);
 			
+			Test3 ();
 			Test4 ();
 			
 			var t       = new Timer ();
-			t.Interval  = 1000/30;
+			t.Interval  = 1000/100;
 			t.Tick      += delegate
 			{
-				int ticks = 10;
+				int ticks = 15;
 				for (int i=0; i<ticks; i++)
 				{
 					if (selected != null)
 					{
 						var b = selected.body;
-						b.vel = 0.9 * b.vel + 2 * (mouse - (b.pos + offset.Rotate (b.dir)));
+						b.vel = 0.9 * b.vel + 2 * (mouse - (b.pos + offset));
 					}
-					space.RunPhysics (0.05/ticks);
+					space.RunPhysics (0.05/ticks, 5);
 				}
+				space.RunPhysics (0, 5);
 				
 				/*foreach (Ray r in rays) r.Reset ();
 				foreach (Shape s in space.Query (new AABB {l=0,t=0,r=1200,b=1000}))
@@ -69,11 +70,7 @@ namespace GlazeDev
 		{
 			var area = new AABB (); area.SetExtents (mouse, new Vec2 (1,1));
 			selected = space.Query (area).FirstOrDefault (s => s.ContainsPoint (mouse));
-			if (selected != null)
-			{
-				var b = selected.body; 
-				offset = (mouse - b.pos).Rotate (new Vec2 (b.dir.x,-b.dir.y));
-			}
+			if (selected != null) { var b = selected.body; offset = (mouse - b.pos); }
 		}
 		
 		protected override void OnPaint(PaintEventArgs e)
@@ -103,7 +100,7 @@ namespace GlazeDev
 			{
 				var n = rand.Next (3) + 3;
 				var verts = new Vec2 [n]; double r = 20;
-				for (int j=0; j<n; j++) verts [j] = r * Vec2.Polar ((double)(n-j)/n * 2*Math.PI);
+				for (int j=0; j<n; j++) verts [j] = r * (0.5+getrand (1)) * Vec2.Polar ((double)(n-j)/n * 2*Math.PI);
 				
 				var p = new Polygon (verts); p.CalcMass (1);
 				var b = new Body { gravity = gravity, pos = new Vec2 (getrand (600), getrand (400)) };
@@ -115,7 +112,7 @@ namespace GlazeDev
 		
 		public void Test3 ()
 		{
-			for (int r=0; r<30;        r++)
+			for (int r=0; r<20;        r++)
 			for (int c=0; c<6+(1+r)%2; c++)
 			{
 				var b = Tools.BoxBody (130 + 60*((double)(r%2)/2 + c), 445 - r * 10, 0, 60,10);
@@ -131,12 +128,13 @@ namespace GlazeDev
 			var r = 15;
 			
 			var last = Tools.CircleBody (20,100, r);
-			last.gravity = gravity;
+			last.massInv = 0.000001;
 			space.AddBody (last);
 			
 			for (int i=1; i<50; i++)
 			{
-				var c = Tools.CircleBody (20+i*2*r,100, r);
+				//var c = Tools.CircleBody (20+i*2*r,100, r);
+				var c = Tools.BoxBody (30+i*r,100, 0,r,r);
 				c.gravity = gravity;
 				space.AddBody (c);
 				space.AddJoint (new DistanceJoint (last,c, last.pos, c.pos));
