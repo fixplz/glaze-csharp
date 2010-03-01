@@ -1,78 +1,75 @@
 ﻿
-INSTRUCTIONS
+INTERFACE
+r12
 
-var space  = new SortedSpace ();
-
-var circle = new Circle { radius = 15, offset = new Vec2 (0,0) };
-var body   = new Body
-	{ pos = new Vec (200,200), gravity = new Vec2 (0,50) };
-
-circle.CalcMass (); body.AddShape (circle); body.CalcProperties ();
-space.AddBody (body);
-
-void Update () { space.RunPhysics (1.0/60); DrawMyBody (body.pos); }
-
-
-- Each body has a separate 'gravity' property, so you can have
-  custom gravity directions.
-- Setting invMass and/or invInertia to zero will make a body's
-  velocity and rotation (repectively) fixed.
-- You can safely modify 'vel' and 'angle', as well as 'vel'
-  and 'w', their derivatives.
-
+AABB l,r,t,b : double
+Vec2 x,y     : double
 
 Space
-	AddBody     (b)     : void
-	RemoveBody  (b)     : void
-	RunPhysics  (dt)    : void
+	AddBody, RemoveBody, AddJoint, RemoveJoint
+	RunPhysics  (dt,n)  : void
 	Query       (area)  : IEnumerable<Shape>
 
-Body
-	pos, vel   : Vec2
-	angle, w   : double
-	gravity    : Vec2
-	massInv    : double
-	inertiaInv : double
-	group      : uint       // collision ignored if equal groups
-	AddShape       (s)  : void
-	RemoveShape    (s)  : void
-	CalcProperties ()   : void
+SortedSpace : Space  // completes Space with with simple sorting broad phase
 
-Arbiter
-	sa,sb    : Shape
-	contacts : List<Contact>
-	GetOther (b : Body) : Body
+Body
+	pos,   vel : Vec2    // set these freely
+	angle, rot : double
+	gravity    : Vec2    // each body has separate gravity
+	massInv    : double  // inverted mass&inertia - zero makes body unmovable
+	inertiaInv : double
+	group      : uint    // shapes collide if overlapping bits
+	AddShape, RemoveShape
+	CalcProperties () : void   // set mass based on shapes
+	ImpulseAtPoint (j,p)  : void
+	Touching              : IEnumerable<Body>	
 
 Shape
 	body     : Body
-	aabb     : AABB
-	material : Material
+	aabb     : AABB    // updated at the start of the step
+	mass     : double
 	Area     : double
 	Inertia  : double
-	CalcMass () : void
+	CalcMass (density) : void  // sets mass from area
+	ContainsPoint (p)   : bool
+	IntersectRay  (ray) : void
 
 Polygon : Shape
 	vertL, vertP : Vec2[]   // local and absolute vertice coords
-	Polygon (vertices : Vec2[])
+	new (vertices : Vec2[])
 
 Circle : Shape
 	radius      : double
 	offset, pos : Vec2
 
-AABB l,r,t,b : double
-Vec2 x,y     : double
+Ray   // use with Shape.IntersectRay to update 'dist'
+	dist : double
+	new (origin,target,range)
+	Reset () : void
 
+Joint
+	a,b : Body
+	con : Connection
 
+DistanceJoint : Joint
+	anchordist, jnAcc : double   // desired distance, joint strain
+	jnMax : double               // strength cap, set to make stretchier
+	new (a,b, anchor1, anchor2)
 
-TODO
+Arbiter   // object between two shapes
+	sa,sb        : Shape
+	stick,bounce : double
+	Contacts     : IEnumerable<Contact>
+	GetOther (b : Body)    : Body
+	Belong   (a,b : Shape) : bool
 
-- Shape defs that hold static data like the local vertices
-  of a polygon - enables quicker creation of new instances.
-- Something similar for bodies, to remove the CalcMass and
-  CalcProperties thing.
+Contact   // single point of contact
+	con : Connection
+	p : Vec2       // position
+	dist : double  // penetration
+	jnAcc,jtAcc    // perpendicular and tangent strain
 
-- Joints, springs
-- Use callbacks to get shape group and combined friction/restitution
+Connection r1,r2,n : Vec2
 
 
 
@@ -80,7 +77,7 @@ GOTCHAS
 
 - Shapes are updated at the start of RunPhysics, so their data (like
   the absolute position) is one step behind the real body position.
-- AddBody will probably invalidate the broad phase, so Query
-  won't work before RunPhysics.
+- AddBody will invalidate the broad phase, so Query won't work
+  before RunPhysics.
 - You must take care that two fixed bodies don't collide in an
   unresolvable way, or they'll explode.

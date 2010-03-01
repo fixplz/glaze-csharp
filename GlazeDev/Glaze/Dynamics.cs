@@ -4,90 +4,35 @@ using System.Collections.Generic;
 
 namespace Glaze
 {
-	public sealed class Arbiter : Entry <Arbiter>
+	public sealed class Contact
 	{
-		public Shape sa,sb;
-		public double e,u;
-		
-		internal uint stamp; internal int used = 0;
-		internal Contact[] contacts;
-		
-		internal Arbiter (uint n) { contacts = new Contact [n]; }
-		
-		public bool Belong (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
-		public Body GetOther (Body b) { return sa.body == b ? sb.body : sa.body; }
-		
-		public IEnumerable<Contact> Contacts () { for (int i=0; i<used; i++) yield return contacts [i]; }
-		
-		#region INTERNALS
-		internal bool UpdateContact (Vec2 p, Axis a, uint id)
-		{
-			Contact c;
-			for (int i=0; i<used; i++) { c = contacts [i]; if (c.id == id) goto found; }
-			
-			if (used == contacts.Length) return false;
-			
-			c = contacts [used] ?? (contacts [used] = Contact.Assign ()); used++;
-			c.id = id; c.jnAcc = 0; c.jtAcc = 0;
-		found:
-			c.p = p; c.n = a.n; c.dist = a.d; c.updated = true;
-			return true;
-		}
-		
-		internal override void Remove ()
-		{
-			base.Remove ();
-			sa.body.arbiters.Remove (this);
-			sb.body.arbiters.Remove (this);
-			for (int i=0; i < contacts.Length && contacts [i] != null; i++) Contact.Retire (contacts [i]);
-		}
-		
-		internal void Prestep (double dt)
-		{
-			e = sa.material.restitution * sb.material.restitution;
-			u = sa.material.friction    * sb.material.friction;
-			
-			for (int i = used-1; i>=0; i--)
-			{
-				Contact c = contacts [i];
-				if (!c.updated) { if (i < --used) { contacts [i] = contacts [used]; contacts [used] = c; } }
-				else            { c.updated = false; c.Prestep (dt, this); }
-			}
-		}
-		
-		internal void Perform () { for (int i=0; i<used; i++) contacts [i].Perform (this); }
-		#endregion
-	}
-	
-	
-	
-	public sealed class Contact : Connection
-	{
-		internal static Stack<Contact> pool = new Stack<Contact> (100);
+		internal static readonly Stack<Contact> pool = new Stack<Contact> (100);
 		internal static Contact Assign () { return pool.Count != 0 ? pool.Pop () : new Contact (); }
 		internal static void Retire (Contact c) { pool.Push (c); }
 		
-		// position, normal, penetration, normal and tangent impulses
+		// position, penetration, normal and tangent impulses
 		public Vec2 p;
 		public double dist, jnAcc,jtAcc;
+		public Connection con;
 		
 		internal double nMass,tMass, bounce, bias,jBias;
-		internal uint id; internal bool updated;
+		internal uint id;
+		internal bool updated;
 		
-		#region RESOLUTION MATH
-		internal void Prestep (double dt, Arbiter arb)
+		#region STEP MATH
+		internal void Prestep (Arbiter arb)
 		{
 			Body a = arb.sa.body, b = arb.sb.body;
 			
-			r1 = p - a.pos; r2 = p - b.pos;
+			con.r1 = p - a.pos; con.r2 = p - b.pos;
 			
-			nMass = 1.0 / Calc.KScalar (a,b, this, n);
-			tMass = 1.0 / Calc.KScalar (a,b, this, n.Left);
+			nMass = 1.0 / Calc.KScalar (a,b, con, con.n);
+			tMass = 1.0 / Calc.KScalar (a,b, con, con.n.Left);
 			
-			jBias = 0; bias = 1.0/dt * Calc.BiasDist (dist);
-			bounce = arb.e * n * Calc.RelativeVelocity (a,b, this);
+			jBias = 0; bias = Calc.BiasDist (dist);
+			bounce = arb.stick * con.n * Calc.RelativeVelocity (a,b, con);
 			
-			Calc.NormalImpulse (jnAcc,jtAcc, this, a,b);
+			Calc.ContactImpulse (jnAcc,jtAcc, con, a,b);
 		}
 		
 		internal void Perform (Arbiter arb)
@@ -95,28 +40,30 @@ namespace Glaze
 			Body a = arb.sa.body, b = arb.sb.body;
 			double jbn, jn, jt; Vec2 vb, vr;
 			
-			vb   = Calc.RelativeBiasVelocity (a,b, this);
-			vr   = Calc.RelativeVelocity     (a,b, this);
+			vb   = Calc.RelativeBiasVelocity (a,b, con);
+			vr   = Calc.RelativeVelocity     (a,b, con);
 			
-			jbn  = nMass * (vb * n - bias);
-			jn   = nMass * (vr * n + bounce);
-			jt   = tMass * (vr * n.Left);
+			jbn  = nMass * (vb * con.n - bias);
+			jn   = nMass * (vr * con.n + bounce);
+			jt   = tMass * (vr * con.n.Left);
 			
 			Calc.AddPositive (ref jBias, ref jbn);
 			Calc.AddPositive (ref jnAcc, ref jn);
-			Calc.AddClamp    (ref jtAcc, ref jt, arb.u * jnAcc);
+			Calc.AddClamp    (ref jtAcc, ref jt, arb.bounce * jnAcc);
 			
-			Calc.NormalBias    (jbn,   this, a,b);
-			Calc.NormalImpulse (jn,jt, this, a,b);
+			Calc.NormalBias     (jbn,    con, a,b);
+			Calc.ContactImpulse (jn,jt, con, a,b);
 		}
 		#endregion
 	}
 	
 	
 	
-	public abstract class Joint : Connection
+	public abstract class Joint : Entry<Joint>
 	{
-		public   Body a,b;
+		public Body a,b;
+		public Connection con;
+		
 		internal Vec2 a1,a2;
 		
 		internal Joint (Body a, Body b, Vec2 a1, Vec2 a2)
@@ -125,60 +72,60 @@ namespace Glaze
 			this.a1 = (a1-a.pos); this.a2 = (a2-b.pos);
 		}
 		
-		internal abstract void Prestep (double dtInv);
+		internal abstract void Prestep ();
 		internal abstract void Perform ();
-		
-		internal LinkedListNode<Joint> node;
-		internal void Attach (LinkedList<Joint> list) { node = list.AddFirst (this); }
-		internal void Remove () { node.List.Remove (node); }
 	}
 	
 	
 	public class DistanceJoint : Joint
 	{
-		public   double adist, jnAcc;
-		internal double nMass, bias,jBias;
+		public   double anchordist, jnAcc, jnMax = Double.PositiveInfinity;
+		internal double nMass, bias;
 		
 		public DistanceJoint (Body a, Body b, Vec2 anchor1, Vec2 anchor2)
 			: base (a,b,anchor1,anchor2)
 		{
-			adist = (anchor1-anchor2).Length;
+			anchordist = (anchor1-anchor2).Length;
 		}
 		
-		internal override void Prestep (double dtInv)
+		#region STEP MATH
+		internal override void Prestep ()
 		{
-			r1 = a1.Rotate (a.dir); r2 = a2.Rotate (b.dir);
+			con.r1 = a1.Rotate (a.dir); con.r2 = a2.Rotate (b.dir);
 			
-			Vec2 d = (b.pos+r2) - (a.pos+r1);
+			Vec2 d = (b.pos + con.r2) - (a.pos + con.r1);
 			double dist = d.Length;
 			
-			n = dist == 0 ? new Vec2 () : 1/dist * d;
-			nMass = 1.0 / Calc.KScalar (a,b, this, n);
+			con.n = dist == 0 ? new Vec2 () : 1/dist * d;
+			nMass = 1.0 / Calc.KScalar (a,b, con, con.n);
 			
-			bias = dtInv * Config.resolveBias * (dist - adist);
-			jBias = 0;
+			bias = Calc.BiasJoint (dist - anchordist);
 			
-			Calc.NormalImpulse (jnAcc,0, this, a,b);
+			Calc.NormalImpulse (jnAcc, con, a,b);
 		}
 		
-		internal override void Perform()
+		internal override void Perform ()
 		{
 			Vec2 vb,vr; double jbn, jn;
 			
-			vb = Calc.RelativeBiasVelocity (a,b, this);
-			vr = Calc.RelativeVelocity     (a,b, this);
+			vb  = Calc.RelativeBiasVelocity (a,b, con);
+			vr  = Calc.RelativeVelocity     (a,b, con);
 			
-			         jbn = nMass * (vb * n - bias);
-			jnAcc += jn  = nMass * (vr * n);
+			jbn = nMass * (vb * con.n - bias);
+			jn  = nMass * (vr * con.n);
 			
-			Calc.NormalBias    (jbn,  this, a,b);
-			Calc.NormalImpulse (jn,0, this, a,b);
+			//jnAcc += jn;
+			Calc.AddClamp (ref jnAcc, ref jn, jnMax);
+			
+			Calc.NormalBias    (jbn, con, a,b);
+			Calc.NormalImpulse (jn,  con, a,b);
 		}
+		#endregion
 	}
 	
 	
 	
-	public class Connection
+	public struct Connection
 	{
 		public Vec2 r1,r2, n;
 	}
@@ -188,10 +135,13 @@ namespace Glaze
 	internal static class Calc
 	{
 		#region AUX
-		internal static double BiasDist (double dist) { return Config.resolveBias * Math.Min (0, dist + Config.resolveSlop); }
+		internal static double BiasDist  (double dist) { return Config.resolveRate * Math.Min (0, dist + Config.resolveSlop); }
+		internal static double BiasJoint (double dist) { return Config.resolveRate * dist; }
 		
-		internal static void NormalBias    (double jbn,           Connection c, Body a, Body b) { Vec2 j = jbn*c.n;                       a.ApplyBias    (-j, c.r1);  b.ApplyBias    (j, c.r2); }
-		internal static void NormalImpulse (double jn, double jt, Connection c, Body a, Body b) { Vec2 j = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
+		internal static void NormalBias    (double jbn, Connection c, Body a, Body b) { Vec2 j = jbn*c.n; a.ApplyBias    (-j, c.r1);  b.ApplyBias    (j, c.r2); }
+		internal static void NormalImpulse (double jn,  Connection c, Body a, Body b) { Vec2 j = jn*c.n;  a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
+		
+		internal static void ContactImpulse (double jn, double jt, Connection c, Body a, Body b) { Vec2 j = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
 		
 		internal static void AddPositive (ref double old, ref double change) { change = Math.Max (-old, change); old += change; }
 		internal static void AddClamp    (ref double old, ref double change, double limit)
@@ -214,7 +164,7 @@ namespace Glaze
 		{
 			switch ((int)((int)sa.shapeType*5 + sb.shapeType))
 			{
-				case 0: return Circle2Circle ((Circle)  sa, (Circle)  sb,  ref arb);
+				case 0: return Circle2Circle ((Circle)  sa, (Circle)  sb, ref arb);
 				case 1: return Circle2Poly   ((Circle)  sa, (Polygon) sb, ref arb);
 				case 6: return Poly2Poly     ((Polygon) sa, (Polygon) sb, ref arb);
 			}

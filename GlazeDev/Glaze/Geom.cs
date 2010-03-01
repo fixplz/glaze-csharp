@@ -14,6 +14,7 @@ namespace Glaze
 		internal double rotBias;
 		
 		public Vec2 gravity;
+		public double damping = 0.999;
 		
 		// local transform
 		public Vec2 dir;
@@ -37,6 +38,8 @@ namespace Glaze
 		public void AddShape    (Shape s) { shapes.AddFirst (s); s.body = this; }
 		public void RemoveShape (Shape s) { shapes.Remove (s); s.Remove (); }
 		
+		public void ImpulseAtPoint (Vec2 j, Vec2 p) { ApplyImpulse (j, p-pos); }
+		
 		public void CalcProperties ()
 		{
 			double mass = 0, inertia = 0;
@@ -44,30 +47,29 @@ namespace Glaze
 			massInv = 1.0/mass; inertiaInv = 1.0/inertia;
 		}
 		
-		public IEnumerable<Body> Touching ()
-		{
+		public IEnumerable<Body> Touching
+		{ get {
 			Stack<Body> s = new Stack<Body> ();
 			foreach (Arbiter arb in arbiters)
 			{
 				Body other = arb.GetOther (this);
 				if (!s.Contains (other)) { s.Push (other); yield return other; }
 			}
-		}
+		} }
 		
 		internal void UpdateVelocity (double dt)
 		{
-			double damping = 0.999; // TODO damping
 			vel = damping * vel + dt * gravity;
 			rot = damping * rot;
 		}
 		
 		internal void UpdatePosition (double dt)
 		{
-			pos += dt * (vel + velBias); angle += dt * (rot + rotBias); dir = Vec2.Polar (angle);
+			pos += dt*vel + velBias; dir = Vec2.Polar (angle += dt*rot + rotBias);
 			velBias.x = velBias.y = rotBias = 0;
 		}
 		
-		public   void ApplyImpulse (Vec2 j, Vec2 r) { vel     += massInv*j; rot     -= inertiaInv*j.Cross (r); }
+		internal void ApplyImpulse (Vec2 j, Vec2 r) { vel     += massInv*j; rot     -= inertiaInv*j.Cross (r); }
 		internal void ApplyBias    (Vec2 j, Vec2 r) { velBias += massInv*j; rotBias -= inertiaInv*j.Cross (r); }
 		#endregion
 	}
@@ -76,11 +78,12 @@ namespace Glaze
 	
 	public abstract class Shape : Entry <Shape>
 	{
-		public Material   material = Config.defaultMaterial;
 		public ShapeType  shapeType;
 		public Body       body;
 		public AABB       aabb;
 		public double     mass;
+		
+		public double friction = Config.defaultFriction, restitution = Config.defaultRestitution;
 		
 		public void CalcMass (double density) { mass = density * Area * Config.areaMassRatio; }
 		
@@ -235,13 +238,6 @@ namespace Glaze
 			if (ix == -1) return; r.Report (this, outer, axisP [ix].n);
 		}
 		#endregion
-	}
-	
-	
-	
-	public struct Material
-	{
-		public double restitution, friction;
 	}
 	
 	
