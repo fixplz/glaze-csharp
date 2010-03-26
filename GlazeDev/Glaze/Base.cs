@@ -12,7 +12,7 @@ namespace Glaze
 			resolveRate    = 0.1,
 			
 			defaultRestitution = 0.0,
-			defaultFriction    = 0.5;
+			defaultFriction    = 0.8;
 	}
 	
 	

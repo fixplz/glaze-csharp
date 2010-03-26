@@ -3,8 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Drawing;
+using Glaze;
 
-namespace Glaze
+namespace GlazeDev
 {
 	public static class Tools
 	{
