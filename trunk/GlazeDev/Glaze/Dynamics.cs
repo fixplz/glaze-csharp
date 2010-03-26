@@ -30,7 +30,7 @@ namespace Glaze
 			tMass = 1.0 / Calc.KScalar (a,b, con, con.n.Left);
 			
 			jBias = 0; bias = Calc.BiasDist (dist);
-			bounce = arb.stick * con.n * Calc.RelativeVelocity (a,b, con);
+			bounce = arb.bounce * con.n * Calc.RelativeVelocity (a,b, con);
 			
 			Calc.ContactImpulse (jnAcc,jtAcc, con, a,b);
 		}
@@ -49,9 +49,9 @@ namespace Glaze
 			
 			Calc.AddPositive (ref jBias, ref jbn);
 			Calc.AddPositive (ref jnAcc, ref jn);
-			Calc.AddClamp    (ref jtAcc, ref jt, arb.bounce * jnAcc);
+			Calc.AddClamp    (ref jtAcc, ref jt, arb.stick * jnAcc);
 			
-			Calc.NormalBias     (jbn,    con, a,b);
+			Calc.NormalBias     (jbn,   con, a,b);
 			Calc.ContactImpulse (jn,jt, con, a,b);
 		}
 		#endregion
@@ -82,11 +82,8 @@ namespace Glaze
 		public   double anchordist, jnAcc, jnMax = Double.PositiveInfinity;
 		internal double nMass, bias;
 		
-		public DistanceJoint (Body a, Body b, Vec2 anchor1, Vec2 anchor2)
-			: base (a,b,anchor1,anchor2)
-		{
-			anchordist = (anchor1-anchor2).Length;
-		}
+		public DistanceJoint (Body a, Body b, Vec2 anchor1, Vec2 anchor2) : base (a,b,anchor1,anchor2)
+			{ anchordist = (anchor1-anchor2).Length; }
 		
 		#region STEP MATH
 		internal override void Prestep ()
@@ -144,8 +141,7 @@ namespace Glaze
 		internal static void ContactImpulse (double jn, double jt, Connection c, Body a, Body b) { Vec2 j = new Vec2 (jn,jt).Rotate (c.n); a.ApplyImpulse (-j, c.r1);  b.ApplyImpulse (j, c.r2); }
 		
 		internal static void AddPositive (ref double old, ref double change) { change = Math.Max (-old, change); old += change; }
-		internal static void AddClamp    (ref double old, ref double change, double limit)
-			{ double result = Math.Max (-limit, Math.Min (limit, old+change)); change = result-old; old = result; }
+		internal static void AddClamp    (ref double old, ref double change, double limit) { double result = Math.Max (-limit, Math.Min (limit, old+change)); change = result-old; old = result; }
 		
 		internal static Vec2 RelativeVelocity     (Body a, Body b, Connection c) { return (a.rot     * c.r1.Left + a.vel)     - (b.rot     * c.r2.Left + b.vel); }
 		internal static Vec2 RelativeBiasVelocity (Body a, Body b, Connection c) { return (a.rotBias * c.r1.Left + a.velBias) - (b.rotBias * c.r2.Left + b.velBias); }

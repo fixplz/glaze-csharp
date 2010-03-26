@@ -1,6 +1,5 @@
 ﻿
 INTERFACE
-r12
 
 AABB l,r,t,b : double
 Vec2 x,y     : double
@@ -30,6 +29,8 @@ Shape
 	mass     : double
 	Area     : double
 	Inertia  : double
+	friction    : double  // collision properties
+	restitution : double
 	CalcMass (density) : void  // sets mass from area
 	ContainsPoint (p)   : bool
 	IntersectRay  (ray) : void
