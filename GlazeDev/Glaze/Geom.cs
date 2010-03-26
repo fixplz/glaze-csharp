@@ -249,8 +249,8 @@ namespace Glaze
 		public double Width  { get { return r-l; } }
 		public double Height { get { return b-t; } }
 		
-		public void SetExtents (Vec2 c, Vec2 ext) { SetRange (c-ext, c+ext); }
-		public void SetRange   (Vec2 v, Vec2 u)   { t=v.y; b=u.y; l=v.x; r=u.x; }
+		public AABB SetExtents (Vec2 c, Vec2 ext) { SetRange (c-ext, c+ext); return this; }
+		public AABB SetRange   (Vec2 v, Vec2 u)   { t=v.y; b=u.y; l=v.x; r=u.x; return this; }
 		
 		public bool IntersectH (AABB x)  { return x.l < r && l < x.r; }
 		public bool Intersect  (AABB x)  { return IntersectH (x) && x.t < b && t < x.b; }

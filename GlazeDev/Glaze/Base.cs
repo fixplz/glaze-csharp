@@ -103,14 +103,14 @@ namespace Glaze
 		protected void NarrowPhase (Shape sa, Shape sb)
 		{
 			Body a = sa.body, b = sb.body;
-			if (a == b || (a.group != b.group && (a.group&b.group) != 0)) return;
+			if (a == b || (a.group != 0 && (a.group&b.group) != 0)) return;
 			
 			Arbiter arb = null;
 			foreach (Arbiter x in a.arbiters) if (x.Belong (sa,sb)) { arb = x; break; }
 			
 			bool first = arb == null;
-			
 			if (sa.shapeType > sb.shapeType) { var t=sa; sa=sb; sb=t; }
+			if (!first) { arb.sa=sa; arb.sb=sb; }
 			
 			if (Calc.Check (sa, sb, ref arb)) // assigns data to arb if successful
 			{
@@ -124,7 +124,7 @@ namespace Glaze
 	public sealed class Arbiter : Entry <Arbiter>
 	{
 		public Shape sa,sb;
-		public double stick, bounce;
+		public double bounce, stick;
 		
 		internal uint stamp;
 		internal int used = 0;
@@ -169,8 +169,8 @@ namespace Glaze
 		
 		internal void Prestep ()
 		{
-			stick = sa.restitution * sb.restitution;
-			bounce = sa.friction    * sb.friction;
+			bounce = Math.Sqrt (sa.restitution * sb.restitution);
+			stick  = Math.Sqrt (sa.friction    * sb.friction);
 			
 			for (int i = used-1; i>=0; i--)
 			{
