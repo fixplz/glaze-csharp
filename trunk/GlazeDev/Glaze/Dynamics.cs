@@ -79,7 +79,7 @@ namespace Glaze
 	
 	public class DistanceJoint : Joint
 	{
-		public   double anchordist, jnAcc, jnMax = Double.PositiveInfinity;
+		public   double anchordist, jnAcc;
 		internal double nMass, bias;
 		
 		public DistanceJoint (Body a, Body b, Vec2 anchor1, Vec2 anchor2) : base (a,b,anchor1,anchor2)
@@ -111,8 +111,7 @@ namespace Glaze
 			jbn = nMass * (vb * con.n - bias);
 			jn  = nMass * (vr * con.n);
 			
-			//jnAcc += jn;
-			Calc.AddClamp (ref jnAcc, ref jn, jnMax);
+			jnAcc += jn;
 			
 			Calc.NormalBias    (jbn, con, a,b);
 			Calc.NormalImpulse (jn,  con, a,b);

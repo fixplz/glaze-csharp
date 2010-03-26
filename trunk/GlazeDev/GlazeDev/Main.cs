@@ -8,16 +8,19 @@ using Glaze;
 
 namespace GlazeDev
 {
-	public partial class MainForm : Form
+	public class MainForm : Form
 	{
+		[STAThread] public static void Main () { Application.Run (new MainForm ()); }
+		
 		public Space space;
 		public Shape selected;
 		public Vec2  mouse,offset, gravity;
 		public Ray[] rays;
 		
-		public MainForm()
+		public MainForm ()
 		{
-			InitializeComponent();
+			Width = 800;
+			Height = 600;
 			
 			DoubleBuffered = true;
 			
@@ -39,7 +42,7 @@ namespace GlazeDev
 			Test4 ();
 			
 			var t       = new Timer ();
-			t.Interval  = 1000/100;
+			t.Interval  = 1000/40;
 			t.Tick      += delegate
 			{
 				int ticks = 15;
@@ -133,7 +136,6 @@ namespace GlazeDev
 			
 			for (int i=1; i<50; i++)
 			{
-				//var c = Tools.CircleBody (20+i*2*r,100, r);
 				var c = Tools.BoxBody (30+i*r,100, 0,r,r);
 				c.gravity = gravity;
 				space.AddBody (c);
