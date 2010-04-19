@@ -31,9 +31,10 @@ namespace Glaze
 			
 			jBias = 0; bias = Calc.BiasDist (dist);
 			bounce = arb.bounce * con.n * Calc.RelativeVelocity (a,b, con);
-			
-			Calc.ContactImpulse (jnAcc,jtAcc, con, a,b);
 		}
+		
+		internal void PerformCached (Arbiter arb)
+			{ Calc.ContactImpulse (jnAcc,jtAcc, con, arb.sa.body,arb.sb.body); }
 		
 		internal void Perform (Arbiter arb)
 		{
@@ -44,7 +45,7 @@ namespace Glaze
 			vr   = Calc.RelativeVelocity     (a,b, con);
 			
 			jbn  = nMass * (vb * con.n - bias);
-			jn   = nMass * (vr * con.n + bounce);
+			jn   = nMass * (vr * con.n + Space.elasticity * bounce);
 			jt   = tMass * (vr * con.n.Left);
 			
 			Calc.AddPositive (ref jBias, ref jbn);

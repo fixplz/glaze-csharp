@@ -16,7 +16,7 @@ namespace Glaze
 			{
 				n = a.Next;
 				b = a.Previous; if (b.Value.aabb.t < a.Value.aabb.t) continue;
-				for (; b.Previous != null && b.Previous.Value.aabb.t > a.Value.aabb.t; b = b.Previous);
+				while (b.Previous != null && b.Previous.Value.aabb.t > a.Value.aabb.t) b = b.Previous;
 				shapes.Remove (a); shapes.AddBefore (b, a);
 			}
 			

@@ -57,16 +57,15 @@ namespace Glaze
 			}
 		} }
 		
-		internal void UpdateVelocity (double dt)
+		internal void Update (double dt)
 		{
 			vel = damping * vel + dt * gravity;
 			rot = damping * rot;
-		}
-		
-		internal void UpdatePosition (double dt)
-		{
+			
 			pos += dt*vel + velBias; dir = Vec2.Polar (angle += dt*rot + rotBias);
 			velBias.x = velBias.y = rotBias = 0;
+			
+			foreach (Shape s in shapes) s.Update ();
 		}
 		
 		internal void ApplyImpulse (Vec2 j, Vec2 r) { vel     += massInv*j; rot     -= inertiaInv*j.Cross (r); }
@@ -93,7 +92,7 @@ namespace Glaze
 		public abstract bool ContainsPoint (Vec2 v);
 		public abstract void IntersectRay  (Ray ray);
 		
-		internal abstract void UpdateShape ();
+		internal abstract void Update ();
 		
 		public enum ShapeType { Circle, Polygon }
 	}
@@ -111,7 +110,7 @@ namespace Glaze
 		public override double Area    { get { return radius * radius * Math.PI; } }
 		public override double Inertia { get { return radius*radius/2 + offset.Sq; } }
 		
-		internal override void UpdateShape()
+		internal override void Update()
 			{ aabb.SetExtents (center = body.pos + offset.Rotate (body.dir), new Vec2 {x=radius, y=radius}); }
 		
 		public override bool ContainsPoint (Vec2 v) { return (v-center).Sq < radius*radius; }
@@ -191,7 +190,7 @@ namespace Glaze
 			}
 		}
 		
-		internal override void UpdateShape()
+		internal override void Update()
 		{
 			AABB box = new AABB ();
 			

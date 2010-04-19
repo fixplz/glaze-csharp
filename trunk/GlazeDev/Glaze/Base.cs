@@ -11,7 +11,7 @@ namespace Glaze
 			resolveSlop    = 0.1,
 			resolveRate    = 0.1,
 			
-			defaultRestitution = 0.0,
+			defaultRestitution = 0.5,
 			defaultFriction    = 0.8;
 	}
 	
@@ -33,6 +33,8 @@ namespace Glaze
 		public LinkedList<Joint>   joints;
 		
 		internal uint stamp = 0;
+		
+		internal static double elasticity;
 		
 		internal Space ()
 		{
@@ -61,37 +63,39 @@ namespace Glaze
 		
 		public virtual IEnumerable<Shape> Query (AABB area)
 		{
-			foreach (Shape s in shapes)
-				if (s.aabb.Intersect (area))
-					yield return s;
+			foreach (Shape s in shapes) if (s.aabb.Intersect (area)) yield return s;
 		}
 		
 		public void RunPhysics (double dt, int iterations)
 		{
-			foreach (Body b in bodies)
-			{
-				b.UpdateVelocity (dt);
-				foreach (Shape s in b.shapes) s.UpdateShape ();
-			}
+			foreach (Body b in bodies) b.Update (dt);
 			
 			BroadPhase ();
 			
 			for (var n = arbiters.First; n != null;)
 			{
 				Arbiter arb = n.Value; n = n.Next;
-				if (stamp - arb.stamp > 3) arb.Remove (); else arb.Prestep ();
+				if (stamp - arb.stamp > 3) arb.Remove (); 
 			}
 			
-			foreach (Joint j in joints) j.Prestep ();
+			foreach (Arbiter arb in arbiters) arb.Prestep ();
+			foreach (Joint j     in joints)   j.Prestep ();
 			
-			// generally 70% of time spent here
-			for (int i=0; i<iterations; i++)
+			elasticity = 1;
+			for (int i=0; i<iterations*1/3; i++)
 			{
 				foreach (Arbiter arb in arbiters) arb.Perform ();
 				foreach (Joint j     in joints)   j.Perform ();
 			}
 			
-			foreach (Body b in bodies) b.UpdatePosition (dt);
+			foreach (Arbiter arb in arbiters) arb.PerformCached ();
+			
+			elasticity = 0;
+			for (int i=0; i<iterations*2/3; i++)
+			{
+				foreach (Arbiter arb in arbiters) arb.Perform ();
+				foreach (Joint j     in joints)   j.Perform ();
+			}
 			
 			stamp++;
 		}
@@ -132,6 +136,7 @@ namespace Glaze
 		
 		internal Arbiter (uint n) { contacts = new Contact [n]; }
 		
+		#region DETAILS
 		public bool Belong   (Shape a, Shape b) { return (sa == a && sb == b) || (sa == b && sb == a); }
 		public Body GetOther (Body b)           { return sa.body == b ? sb.body : sa.body; }
 		
@@ -151,6 +156,7 @@ namespace Glaze
 			sb.body.arbiters.Remove (this);
 			for (int i=0; i < contacts.Length && contacts [i] != null; i++) Contact.Retire (contacts [i]);
 		}
+		#endregion
 		
 		#region STEP
 		internal bool UpdateContact (Vec2 p, Axis a, uint id)
@@ -179,6 +185,8 @@ namespace Glaze
 				else            { c.updated = false; c.Prestep (this); }
 			}
 		}
+		
+		internal void PerformCached () { for (int i=0; i<used; i++) contacts [i].PerformCached (this); }
 		
 		internal void Perform () { for (int i=0; i<used; i++) contacts [i].Perform (this); }
 		#endregion

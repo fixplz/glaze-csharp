@@ -6,8 +6,12 @@ Vec2 x,y     : double
 
 Space
 	AddBody, RemoveBody, AddJoint, RemoveJoint
-	RunPhysics  (dt,n)  : void
-	Query       (area)  : IEnumerable<Shape>
+	RunPhysics (dt,n) : void // perform physics step; dt is time span
+	                         // stepped before resolving collisions,
+	                         // n is number of iterations done to resolve
+	                         // collisions; can be varied over time,
+	                         // but gradually
+	Query (area) : IEnumerable<Shape>   // get list of shapes in area
 
 SortedSpace : Space  // completes Space with with simple sorting broad phase
 
