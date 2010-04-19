@@ -45,7 +45,7 @@ namespace GlazeDev
 			t.Interval  = 1000/40;
 			t.Tick      += delegate
 			{
-				int ticks = 15;
+				int ticks = 10;
 				for (int i=0; i<ticks; i++)
 				{
 					if (selected != null)
@@ -55,7 +55,6 @@ namespace GlazeDev
 					}
 					space.RunPhysics (0.05/ticks, 5);
 				}
-				space.RunPhysics (0, 5);
 				
 				/*foreach (Ray r in rays) r.Reset ();
 				foreach (Shape s in space.Query (new AABB {l=0,t=0,r=1200,b=1000}))
